@@ -26,6 +26,12 @@ Your prompt ─► ContextBridge (keyword + vector retrieval)
 
 ### Features in v1.0.0
 
+#### Token Efficiency
+- CB returns a compact ranked result (owner file, related files, symbols, dependency summary) instead of raw source files
+- Typically reduces input tokens from tens of thousands of lines of source to a few hundred tokens of grounded context
+- Optional local AI analysis stage compresses results further before they reach your cloud AI
+- Grounded results eliminate hallucinated file paths and method names
+
 #### Retrieval Engine
 - **Hybrid mode** — keyword-first retrieval with guarded vector assist (recommended for most projects)
 - **Semantic mode** — vector-only retrieval using `sentence-transformers` for vague/workflow queries

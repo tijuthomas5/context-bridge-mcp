@@ -53,11 +53,11 @@ Important:
 | Semantic | `config.semantic.json` | Vague workflow/symptom/business questions |
 | Keyword | `config.json` | Exact class/file/controller/service names already known |
 
-All modes run via the same server (`mcp_server_hybrid.py`) started with `start_mcp_server.ps1`. Pick mode at launch time.
+All modes run via the same server (`mcp_server_hybrid.py`) started with your OS start script. Pick mode at launch time.
 
 ## Pipeline (Built-in Analysis Stage)
 
-ContextBridge has a built-in two-stage pipeline — retrieval and analysis. Both run inside ContextBridge, not inside your AI coding tool. The analysis stage uses a local AI model (Ollama) and is optional — ContextBridge works without it.
+ContextBridge has a built-in two-stage pipeline — retrieval and analysis. Both run inside ContextBridge, not inside your AI coding tool. The analysis stage uses a local AI model via Ollama (any Ollama-compatible model works) and is optional — ContextBridge works without it.
 
 Full details: [PIPELINE_SETUP.md](./PIPELINE_SETUP.md)
 
@@ -70,7 +70,7 @@ Full details: [PIPELINE_SETUP.md](./PIPELINE_SETUP.md)
 If you change mode:
 
 1. stop the server (Ctrl+C in the terminal)
-2. re-run `start_mcp_server.ps1` and pick a new mode
+2. re-run your OS start script and pick a new mode
 3. open a new chat
 
 ## Quick Start
@@ -82,11 +82,12 @@ If you change mode:
    - **Linux:** `context_bridge/setup/linux/setup_context_bridge.sh`
    - double-click the bat file (Windows) for the normal full setup
    - use terminal only if you want setup options
-3. start the server:
-   ```powershell
-   context_bridge\start_mcp_server.ps1
-   ```
-   Select a mode when prompted (default: Hybrid). Keep the terminal open.
+3. start the server using your OS start script:
+   - **Windows:** `context_bridge\setup\windows\1.  start_Context_Bridge.bat`
+   - **Mac:** `context_bridge/setup/mac/1. start_Context_Bridge.sh`
+   - **Linux:** `context_bridge/setup/linux/1. start_Context_Bridge.sh`
+
+   Keep the terminal open.
 4. connect your AI tool to `http://127.0.0.1:8755/sse/`
 5. open a new AI chat
 
@@ -95,7 +96,7 @@ See [Quick_mcp_setup.md](./Quick_mcp_setup.md) for per-tool connection examples.
 ## Prompt Guidance
 
 - all modes use `search_context_hybrid()` — same tool name regardless of mode
-- Qwen analysis runs automatically — no need to call `analyze_context` manually
+- local AI analysis runs automatically — no need to call `analyze_context` manually
 - prompt guides tool usage only; it does not switch the active runtime mode
 
 ## Read Next

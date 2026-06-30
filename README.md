@@ -1,5 +1,22 @@
 # ContextBridge
 
+## Why ContextBridge?
+
+Without CB, an AI coding agent either guesses which files are relevant, or you paste entire source files into the chat — burning thousands of input tokens on code that isn't needed.
+
+With CB, the AI calls a single MCP tool and gets back a **compact, ranked result**: the owner file, related files, key symbols, and a dependency summary — typically a few hundred tokens instead of tens of thousands of lines of raw source.
+
+| Without CB | With CB |
+|---|---|
+| Paste 10–50 raw files into context | CB returns the 3–5 files that actually matter |
+| AI guesses which code is relevant | Result is grounded in your real codebase structure |
+| High token cost, noisy context | Low token cost, focused context |
+| Hallucinated file paths and method names | Exact file paths, symbols, and line hints |
+
+The optional local AI analysis stage further compresses the result before it reaches your cloud AI — so you pay even less.
+
+---
+
 > **💡 New here?** Don't want to read everything? Ask your AI assistant (Claude, ChatGPT, Gemini, etc.) to read the [`docs/`](docs/0.%20README.md) folder and guide you through setup for your OS and project.
 
 A local-first code retrieval layer for AI coding agents. ContextBridge indexes your

@@ -1,0 +1,68 @@
+{
+  "profile": "example",
+  "semantic_rules": [
+    {
+      "name": "auth_permission_guard",
+      "query_profiles": [
+        "code_debug"
+      ],
+      "terms_any": [
+        "permission",
+        "auth",
+        "guard",
+        "access"
+      ],
+      "terms_min_any": 2,
+      "path_boosts": [
+        {
+          "suffix": "permissionservice.cs",
+          "score": 10.0
+        },
+        {
+          "suffix": "authcontroller.cs",
+          "score": 8.5
+        }
+      ],
+      "path_penalties": [
+        {
+          "suffix": "userspage.tsx",
+          "score": 5.0
+        }
+      ]
+    },
+    {
+      "name": "order_payment_checkout",
+      "query_profiles": [
+        "code_debug",
+        "infra_runtime"
+      ],
+      "terms_any": [
+        "order",
+        "payment",
+        "checkout",
+        "cart"
+      ],
+      "terms_min_any": 2,
+      "path_boosts": [
+        {
+          "suffix": "orderservice.cs",
+          "score": 10.0
+        },
+        {
+          "suffix": "paymentcontroller.cs",
+          "score": 9.0
+        },
+        {
+          "suffix": "checkoutpage.tsx",
+          "score": 7.0
+        }
+      ],
+      "path_penalties": [
+        {
+          "suffix": "settingspage.tsx",
+          "score": 6.0
+        }
+      ]
+    }
+  ]
+}

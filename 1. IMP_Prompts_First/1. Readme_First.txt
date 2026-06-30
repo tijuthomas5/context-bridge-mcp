@@ -1,6 +1,6 @@
 # Graphify First, Then ContextBridge Setup
 
-Before running setup, make sure the repository’s Graphify data is ready.
+Before running setup, make sure the repository's Graphify data is ready.
 Install Graphify first, then run the setup script for your OS.
 
 ## Required Order

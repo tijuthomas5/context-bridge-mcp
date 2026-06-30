@@ -1,0 +1,22 @@
+[
+  {
+    "id": "Q1",
+    "question": "Where is the user authentication logic handled and which files are involved?"
+  },
+  {
+    "id": "Q2",
+    "question": "How does the order submission flow work from the API endpoint to the database?"
+  },
+  {
+    "id": "Q3",
+    "question": "Which files control the permission checks for role-based access?"
+  },
+  {
+    "id": "Q4",
+    "question": "Where is the background job for sending email notifications defined?"
+  },
+  {
+    "id": "Q5",
+    "question": "How does the search feature query the backend and render results on the frontend?"
+  }
+]
