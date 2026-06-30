@@ -1,6 +1,6 @@
 # ContextBridge
 
-> **Platform: Windows only.** Linux and macOS are not currently supported. The launcher scripts (`.bat`, `.ps1`) require Windows. The Python engine may work on other platforms but has not been tested.
+> **Platform: Windows, Mac, and Linux supported.** Use the scripts in `setup/windows/`, `setup/mac/`, or `setup/linux/` for your OS.
 
 ContextBridge is a local, read-only code context tool built on top of Graphify data.
 
