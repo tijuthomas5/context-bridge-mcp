@@ -1,0 +1,1120 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ContextBridge</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="shell">
+
+  <!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
+  <nav class="sidebar" id="sidebar">
+
+    <div class="sidebar-logo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8">
+        <circle cx="12" cy="12" r="3"/><circle cx="12" cy="4"  r="2"/><circle cx="12" cy="20" r="2"/>
+        <circle cx="4"  cy="12" r="2"/><circle cx="20" cy="12" r="2"/>
+        <line x1="12" y1="7"  x2="12" y2="9"/><line x1="12" y1="15" x2="12" y2="17"/>
+        <line x1="7"  y1="12" x2="9"  y2="12"/><line x1="15" y1="12" x2="17" y2="12"/>
+      </svg>
+      <div>
+        <div class="sidebar-logo-text">ContextBridge</div>
+        <div class="sidebar-logo-sub">MCP Dashboard</div>
+      </div>
+    </div>
+
+    <div class="server-status" id="serverStatusPill">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText" style="font-size:11px;">Connecting…</span>
+    </div>
+
+    <div class="sidebar-nav">
+      <div class="nav-group-label">Dashboard</div>
+
+      <a class="nav-item active" data-section="overview" href="#overview">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Overview
+      </a>
+
+
+
+      <a class="nav-item" data-section="index-health" href="#index-health">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        Index Health
+      </a>
+
+      <a class="nav-item" data-section="search-modes" href="#search-modes">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Search Modes
+      </a>
+
+      <a class="nav-item" data-section="outcomes" href="#outcomes">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
+        Outcomes
+      </a>
+
+      <a class="nav-item" data-section="events" href="#events">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Events
+      </a>
+
+      <a class="nav-item" data-section="diagnostics" href="#diagnostics">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        Diagnostics
+      </a>
+
+      <div class="sidebar-divider"></div>
+      <div class="nav-group-label">Logs</div>
+
+      <a class="nav-item" data-section="pipeline-logs" href="#pipeline-logs">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Pipeline Logs
+      </a>
+
+      <a class="nav-item" data-section="qwen-input" href="#qwen-input">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Local AI Inspector
+      </a>
+
+      <div class="sidebar-divider"></div>
+      <div class="nav-group-label">Config</div>
+
+      <a class="nav-item" data-section="config-helper" href="#config-helper">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+        Quick Reference
+      </a>
+
+      <a class="nav-item" data-section="settings" href="#settings">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+        <span class="kbd">S</span>
+      </a>
+
+      <a class="nav-item" data-section="about" href="#about">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        About & Methodology
+      </a>
+
+      <div class="sidebar-divider"></div>
+      <div class="nav-group-label">Advanced</div>
+
+      <a class="nav-item" data-section="eval" href="#eval">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Eval Comparison
+      </a>
+
+      <a class="nav-item" data-section="code-quality" href="#code-quality">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        Code Quality
+      </a>
+
+      <a class="nav-item" data-section="graphify" href="#graphify">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        Graphify Enrichment
+      </a>
+    </div>
+
+    <div class="sidebar-footer">
+      <button class="theme-btn" id="themeToggle">
+        <svg width="13" height="13" id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <span id="themeLabel">Light mode</span>
+        <span class="kbd">T</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ── Main area ────────────────────────────────────────────────────────── -->
+  <div class="main-area">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="mode-badge hybrid" id="modeBadge">Hybrid</span>
+        <span class="mode-badge" id="retrievalBackendBadge">Vector: hash</span>
+        <span class="mode-badge" id="embeddingModelBadge" style="display:none;">Model: all-MiniLM-L6-v2</span>
+        <span class="mode-badge" id="testModeBadge" style="display:none; background:#ef4444; color:white; border-color:#dc2626;">TEST MODE</span>
+        <span class="topbar-timestamp" id="generatedAt">Loading…</span>
+      </div>
+      <div class="topbar-right">
+        <button class="icon-btn" id="refreshBtn" title="Refresh (R)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          Refresh
+        </button>
+        <button class="icon-btn danger" id="resetDashboardData" title="Clear usage logs">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          Reset Data
+        </button>
+        <button class="icon-btn" id="clearRulesCache" title="Force reload ranking rules from disk on next search">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          Reload Rules
+        </button>
+      </div>
+    </header>
+
+    <!-- Content -->
+    <div class="content">
+
+      <div id="dashboardLoading">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin .8s linear infinite"><circle cx="12" cy="12" r="10" stroke-opacity=".2"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>
+        Loading dashboard data…
+      </div>
+
+      <!-- OVERVIEW ─────────────────────────────────────────────────────── -->
+      <div id="overview" class="section">
+        <div class="section-header">
+          <div>
+            <div class="section-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+              Overview
+            </div>
+            <div class="section-help">Operational view first: top cards show actual runtime outcomes, token savings, and retrieval confidence.</div>
+          </div>
+        </div>
+        <div class="metric-grid" id="summaryCards"></div>
+        <div style="margin-top:12px;" class="grid-3" id="modeCards"></div>
+      </div>
+
+
+
+      <!-- INDEX HEALTH ──────────────────────────────────────────────────── -->
+      <div id="index-health" class="section">
+        <div class="section-header">
+          <div>
+            <div class="section-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              Index Health
+            </div>
+            <div class="section-help">Whether each index exists, which backend/model it uses, and when it was last updated.</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="table-wrap"><table id="indexHealth"></table></div>
+        </div>
+      </div>
+
+      <!-- SEARCH MODES ──────────────────────────────────────────────────── -->
+      <div id="search-modes" class="section">
+        <div class="section-header">
+          <div>
+            <div class="section-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              Search Modes
+            </div>
+            <div class="section-help">Per-mode performance: call counts, success rates, and confidence. Per-query detail is in Recent Events below.</div>
+          </div>
+        </div>
+        <div class="grid-3">
+          <div class="panel accent-green">
+            <div class="panel-header">
+              <div class="panel-title">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                Keyword / Graphify
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="chip-row" id="keywordModeCards"></div>
+            </div>
+          </div>
+          <div class="panel accent-blue">
+            <div class="panel-header">
+              <div class="panel-title">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                Hybrid RAG
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="chip-row" id="hybridModeCards"></div>
+            </div>
+          </div>
+          <div class="panel accent-purple">
+            <div class="panel-header">
+              <div class="panel-title">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                Semantic RAG
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="chip-row" id="semanticModeCards"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- OUTCOMES ──────────────────────────────────────────────────────── -->
+      <div id="outcomes" class="section">
+        <div class="section-header">
+          <div>
+            <div class="section-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
+              Outcome Signals
+            </div>
+            <div class="section-help">Logged outcomes stay primary. Derived risk stays here as a heuristic diagnostic signal.</div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header"><div class="panel-title">Logged Outcomes vs Derived Risk</div></div>
+            <div class="panel-body"><div class="outcome-bars" id="outcomeBars"></div></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><div class="panel-title">Failure Reasons</div></div>
+            <div class="panel-body no-pad"><div class="table-wrap"><table id="failureReasons"></table></div></div>
+          </div>
+        </div>
+        <div style="margin-top:16px;" class="panel">
+          <div class="panel-header"><div class="panel-title">Tool Calls</div></div>
+          <div class="panel-body no-pad"><div class="table-wrap"><table id="toolCounts"></table></div></div>
+        </div>
+      </div>
+
+      <!-- EVENTS ────────────────────────────────────────────────────────── -->
+      <div id="events" class="section">
+        <div class="section-header">
+          <div>
+            <div class="section-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              Recent Events
+            </div>
+            <div class="section-help">Each row shows the actual logged outcome first, then the heuristic risk signal explaining what may need attention.</div>
+          </div>
+        </div>
+        <div class="filter-row" id="eventFilters"></div>
+        <div class="panel">
+          <div class="table-wrap"><table id="recentEvents"></table></div>
+          <div class="panel-body" id="recentEventsPager"></div>
+        </div>
+      </div>
+
+      <!-- DIAGNOSTICS ───────────────────────────────────────────────────── -->
+      <div id="diagnostics" class="section">
+        <div class="section-header">
+          <div>
+            <div class="section-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              Diagnostics
+            </div>
+            <div class="section-help">Missed files and low-confidence queries — use these to tune Graphify or improve prompts.</div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header"><div class="panel-title">Missed Files</div></div>
+            <div class="panel-body no-pad"><div class="table-wrap"><table id="missedFiles"></table></div></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><div class="panel-title">Low Confidence Searches</div></div>
+            <div class="panel-body no-pad"><div class="table-wrap"><table id="lowConfidence"></table></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pipeline Logs -->
+      <div id="pipeline-logs" class="section">
+        <div class="section-header">
+          <div>
+            <div class="section-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              Pipeline Logs
+            </div>
+            <div class="section-help">What ran on the last query — pipeline mode, steps executed, local AI result, gap searches.</div>
+          </div>
+          <button class="save-btn" onclick="loadPipelineLogs()">Refresh</button>
+        </div>
+
+        <!-- Active Pipeline Mode -->
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header"><div class="panel-title">Active Pipeline Mode</div></div>
+          <div class="panel-body">
+            <div id="pipelineModeStatus" class="settings-status-row"></div>
+          </div>
+        </div>
+
+        <!-- Last Run Summary -->
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header"><div class="panel-title">Last Run Summary</div></div>
+          <div class="panel-body">
+            <div id="pipelineLastRun" class="settings-status-row"></div>
+          </div>
+        </div>
+
+        <!-- Steps that ran -->
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header"><div class="panel-title">Steps Executed</div></div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap"><table id="pipelineStepsTable"></table></div>
+          </div>
+        </div>
+
+        <!-- Gap Search Log -->
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header">
+            <div class="panel-title">Gap Searches</div>
+            <span class="field-hint" style="margin-left:8px;">Auto-fired by CB when local AI flagged missing files</span>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap"><table id="pipelineGapTable"></table></div>
+          </div>
+        </div>
+
+        <!-- Local AI Output Summary -->
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">Local AI Output — Topics & Ranked Files</div>
+            <span class="field-hint" style="margin-left:8px;">What local AI returned to CB after analysis</span>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap"><table id="pipelineTopicsTable"></table></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Local AI Inspector (formerly Qwen Input) -->
+      <div id="qwen-input" class="section">
+        <div class="section-header">
+          <div>
+            <div class="section-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              Local AI Inspector
+            </div>
+            <div class="section-help">Exactly what ContextBridge sent to the local AI for the most recent search. Refresh after each query to see the latest.</div>
+          </div>
+          <div style="display:flex;gap:8px;margin-left:auto">
+            <button class="save-btn" id="clearAnalysisCache" onclick="clearAnalysisCache()" style="background:#c0392b">Clear Local AI Cache</button>
+            <button class="save-btn" onclick="loadQwenInput()">Refresh</button>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header"><div class="panel-title">Local AI Context Limits</div></div>
+          <div class="panel-body">
+            <div id="promptConfigCards" class="settings-status-row"></div>
+            <p class="section-help" style="margin-top:12px;">
+              To change these values, edit <code>context_bridge/analysis/prompt.py</code> lines 4–6.<br>
+              To change the local AI's instructions (role, rules, relevance check), edit <code>SYSTEM_PROMPT</code> in the same file at line 8.
+            </p>
+          </div>
+        </div>
+
+        <div id="qwenInputMeta" class="panel" style="margin-bottom:16px;">
+          <div class="panel-body"><span class="muted-text">Loading...</span></div>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header"><div class="panel-title">Query Sent to CB</div></div>
+          <div class="panel-body">
+            <pre id="qwenQuery" class="code-block" style="white-space:pre-wrap;word-break:break-word;max-height:120px;overflow-y:auto;"></pre>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header">
+            <div class="panel-title">User Prompt Sent to Local AI (CB Results Package)</div>
+            <span class="field-hint" style="margin-left:8px;">Files, symbols, code blocks, dependency chain — everything CB passed to local AI</span>
+          </div>
+          <div class="panel-body">
+            <pre id="qwenUserPrompt" class="code-block" style="white-space:pre-wrap;word-break:break-word;max-height:500px;overflow-y:auto;font-size:11px;"></pre>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">System Prompt (Local AI Instructions)</div>
+            <span class="field-hint" style="margin-left:8px;">The rules and role definition sent to local AI on every call — edit in context_bridge/analysis/prompt.py</span>
+          </div>
+          <div class="panel-body">
+            <pre id="qwenSystemPrompt" class="code-block" style="white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;font-size:11px;"></pre>
+          </div>
+        </div>
+
+        <!-- Qwen Output -->
+        <div class="section-header" style="margin-top:32px;">
+          <div>
+            <div class="section-title">What Local AI Returned</div>
+            <div class="section-help">The analysis local AI produced — this is exactly what Claude receives to implement your task.</div>
+          </div>
+        </div>
+
+        <div id="qwenOutputMeta" class="panel" style="margin-bottom:16px;">
+          <div class="panel-body"><span class="muted-text">Loading...</span></div>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header"><div class="panel-title">Relevance Check & Confidence</div></div>
+          <div class="panel-body"><div id="qwenRelevance" class="settings-status-row"></div></div>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header"><div class="panel-title">Summary (what local AI understood)</div></div>
+          <div class="panel-body"><div id="qwenSummary" class="section-help"></div></div>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header"><div class="panel-title">Topic Breakdown (per-issue analysis)</div></div>
+          <div class="panel-body no-pad"><div class="table-wrap"><table id="qwenTopics"></table></div></div>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header"><div class="panel-title">Ranked Files Local AI Gave Claude</div></div>
+          <div class="panel-body no-pad"><div class="table-wrap"><table id="qwenRankedFiles"></table></div></div>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header"><div class="panel-title">Gap Re-searches (auto-fired when local AI detects a missing topic file)</div></div>
+          <div class="panel-body no-pad"><div class="table-wrap"><table id="gapSearchTable"></table></div></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><div class="panel-title">Raw Local AI Response (JSON)</div></div>
+          <div class="panel-body">
+            <pre id="qwenRawOutput" class="code-block" style="white-space:pre-wrap;word-break:break-word;max-height:400px;overflow-y:auto;font-size:11px;"></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- QUICK REFERENCE ─────────────────────────────────────────────────── -->
+      <div id="config-helper" class="section">
+        <div class="section-header">
+          <div>
+            <div class="section-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+              Quick Reference
+            </div>
+            <div class="section-help">Search modes, pipeline modes, and how to trigger ContextBridge from your prompts.</div>
+          </div>
+        </div>
+        <div class="config-grid" id="configHelper"></div>
+      </div>
+
+      <!-- SETTINGS ──────────────────────────────────────────────────────── -->
+      <div id="settings" class="section">
+        <div class="section-header">
+          <div>
+            <div class="section-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              Settings
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header"><div class="panel-title">Server Status</div></div>
+          <div class="panel-body"><div id="serverStatusCards" class="settings-status-row"></div></div>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header"><div class="panel-title">Ollama / Local LLM</div></div>
+          <div class="panel-body"><div id="ollamaStatus" class="ollama-status"></div></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><div class="panel-title">Config Editor</div></div>
+          <div class="panel-body">
+            <p class="section-help" style="margin-bottom:16px;">Changes to AI Pipeline and RAG settings take effect on the next query — no restart needed.</p>
+            <div class="config-tabs" id="configTabs"></div>
+
+            <!-- Hybrid -->
+            <div class="config-form" id="form-hybrid">
+              <div class="form-section">
+                <div class="form-section-title">AI Pipeline — Analysis Stage</div>
+                <div class="form-grid">
+                  <div class="form-field">
+                    <label>Analysis Enabled</label>
+                    <label class="toggle"><input type="checkbox" id="hybrid-analysis-enabled"><span class="toggle-track"></span></label>
+                    <span class="field-hint">Turn off to skip local AI analysis — CB results go to Claude directly without ranking or validation</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Auto-Analyze</label>
+                    <label class="toggle"><input type="checkbox" id="hybrid-auto-analyze"><span class="toggle-track"></span></label>
+                    <span class="field-hint">Runs local AI analysis automatically inside every search_context_hybrid() call</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Show AI Meta</label>
+                    <label class="toggle"><input type="checkbox" id="hybrid-show-ai-meta"><span class="toggle-track"></span></label>
+                    <span class="field-hint">Include model name, provider, and latency in every CB response (ai_meta field)</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Provider</label>
+                    <select id="hybrid-provider" class="form-input">
+                      <option value="ollama">ollama (local)</option>
+                      <option value="anthropic">anthropic</option>
+                      <option value="openai">openai</option>
+                      <option value="openrouter">openrouter</option>
+                    </select>
+                    <span class="field-hint">ollama = free local model. Cloud providers (anthropic/openai) cost money per query</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Model</label>
+                    <input type="text" id="hybrid-model" class="form-input" placeholder="e.g. qwen2.5-coder:7b">
+                    <div id="hybrid-model-hints" class="model-hint-list"></div>
+                    <span class="field-hint">The local or cloud model that validates and re-ranks CB results before Claude sees them</span>
+                  </div>
+                  <div class="form-field" id="hybrid-endpoint-field">
+                    <label>Endpoint URL</label>
+                    <input type="text" id="hybrid-endpoint" class="form-input" placeholder="http://localhost:11434/api/generate">
+                    <span class="field-hint">Ollama default: http://localhost:11434/api/generate</span>
+                  </div>
+                  <div class="form-field" id="hybrid-apikey-field">
+                    <label>API Key</label>
+                    <input type="password" id="hybrid-apikey" class="form-input" placeholder="Leave blank to keep existing">
+                    <span class="field-hint">Required for anthropic / openai / openrouter. Not needed for ollama</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Temperature</label>
+                    <input type="number" id="hybrid-temperature" class="form-input form-input-sm" min="0" max="2" step="0.05">
+                    <span class="field-hint">0.1 recommended — low temperature = consistent, deterministic analysis output</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Timeout (s)</label>
+                    <input type="number" id="hybrid-timeout" class="form-input form-input-sm" min="10" max="600">
+                    <span class="field-hint">Max seconds to wait for the AI model to respond. Increase if local AI times out on large queries</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Auto-Analyze Timeout (s)</label>
+                    <input type="number" id="hybrid-auto-timeout" class="form-input form-input-sm" min="10" max="600">
+                    <span class="field-hint">Separate timeout for auto-analysis. Set lower than Timeout to fail fast without blocking CB</span>
+                  </div>
+                </div>
+              </div>
+              <div class="form-section">
+                <div class="form-section-title">Pipeline Mode</div>
+                <div class="form-grid">
+                  <div class="form-field">
+                    <label>Pipeline Mode</label>
+                    <select id="hybrid-pipeline-mode" class="form-input" onchange="updatePipelineModeHint(this,'hybrid-pipeline-mode-hint')">
+                      <option value="simple">simple — CB only, no local AI</option>
+                      <option value="validated">validated — CB + local AI once (default)</option>
+                      <option value="iterative">iterative — CB + local AI + gap fill</option>
+                      <option value="full">full — pre-validate + local AI + gap fill + self-reflect</option>
+                    </select>
+                    <span class="field-hint" id="hybrid-pipeline-mode-hint"></span>
+                  </div>
+                  <div class="form-field" id="hybrid-max-gap-field">
+                    <label>Max Gap Iterations</label>
+                    <input type="number" id="hybrid-max-gap-iterations" class="form-input form-input-sm" min="1" max="3">
+                    <span class="field-hint">Gap search rounds per query — only active in iterative and full modes. 1–3 recommended</span>
+                  </div>
+                </div>
+              </div>
+              <div class="form-section">
+                <div class="form-section-title">RAG Settings</div>
+                <div class="form-grid">
+                  <div class="form-field">
+                    <label>RAG Enabled <span style="opacity:0.6;font-weight:400">(read-only)</span></label>
+                    <label class="toggle"><input type="checkbox" id="hybrid-rag-enabled" disabled><span class="toggle-track"></span></label>
+                    <span class="field-hint">Mode is chosen at startup via <code>start_Context_Bridge.bat</code> (Hybrid / Semantic / Keyword). This reflects that choice and cannot be edited here — changing it would conflict with the mode the server was started in.</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Vector Backend</label>
+                    <select id="hybrid-embedding-backend" class="form-input">
+                      <option value="hash">hash</option>
+                      <option value="sentence-transformers">sentence-transformers</option>
+                    </select>
+                    <span class="field-hint">Hash is faster and model-free. Sentence-transformers uses the semantic embedding model below.</span>
+                  </div>
+                  <div class="form-field" id="hybrid-embedding-model-field">
+                    <label>Embedding Model</label>
+                    <input type="text" id="hybrid-embedding-model" class="form-input" placeholder="e.g. all-MiniLM-L6-v2">
+                    <span class="field-hint">Used only when Vector Backend is <code>sentence-transformers</code>.</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Top K Vector</label>
+                    <input type="number" id="hybrid-top-k-vector" class="form-input form-input-sm" min="1" max="100">
+                    <span class="field-hint">How many files semantic/vector search fetches as candidates before fusion with keyword results</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Top K Keyword</label>
+                    <input type="number" id="hybrid-top-k-keyword" class="form-input form-input-sm" min="1" max="100">
+                    <span class="field-hint">How many files keyword search fetches as candidates before fusion with vector results</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Protected Keyword Count</label>
+                    <input type="number" id="hybrid-protected-keyword" class="form-input form-input-sm" min="0" max="50">
+                    <span class="field-hint">Top N keyword results that vector search cannot push down — ensures exact name matches always surface</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Keyword Weight</label>
+                    <input type="number" id="hybrid-keyword-weight" class="form-input form-input-sm" min="0" max="10" step="0.05">
+                    <span class="field-hint">Higher = exact name/symbol matches matter more. Raise when queries use specific file or method names</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Vector Weight</label>
+                    <input type="number" id="hybrid-vector-weight" class="form-input form-input-sm" min="0" max="10" step="0.05">
+                    <span class="field-hint">Higher = semantic meaning matters more. Raise when queries describe behaviour without exact names</span>
+                  </div>
+                </div>
+              </div>
+              <div class="form-actions">
+                <button class="save-btn" onclick="saveConfig('hybrid')">Save Hybrid Config</button>
+                <button class="save-btn" id="hybrid-restart-btn" onclick="restartContextBridge('hybrid')" style="display:none;background:#2563eb;margin-left:8px;">Apply Retrieval Change</button>
+                <button class="save-btn" id="hybrid-apply-btn" onclick="applyModel('hybrid')" style="display:none;background:#e67e22;margin-left:8px;">⚡ Apply &amp; Restart CB</button>
+                <span id="hybrid-save-msg" class="save-msg"></span>
+                <span id="hybrid-restart-status" class="save-msg"></span>
+                <span id="hybrid-apply-status" class="save-msg"></span>
+              </div>
+            </div>
+
+            <!-- Semantic -->
+            <div class="config-form hidden" id="form-semantic">
+              <div class="form-section">
+                <div class="form-section-title">AI Pipeline — Analysis Stage</div>
+                <div class="form-grid">
+                  <div class="form-field">
+                    <label>Analysis Enabled</label>
+                    <label class="toggle"><input type="checkbox" id="semantic-analysis-enabled"><span class="toggle-track"></span></label>
+                    <span class="field-hint">Turn off to skip local AI analysis — CB results go to Claude directly without ranking or validation</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Auto-Analyze</label>
+                    <label class="toggle"><input type="checkbox" id="semantic-auto-analyze"><span class="toggle-track"></span></label>
+                    <span class="field-hint">Runs local AI analysis automatically inside every search_context_hybrid() call</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Show AI Meta</label>
+                    <label class="toggle"><input type="checkbox" id="semantic-show-ai-meta"><span class="toggle-track"></span></label>
+                    <span class="field-hint">Include model name, provider, and latency in every CB response (ai_meta field)</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Provider</label>
+                    <select id="semantic-provider" class="form-input">
+                      <option value="ollama">ollama (local)</option>
+                      <option value="anthropic">anthropic</option>
+                      <option value="openai">openai</option>
+                      <option value="openrouter">openrouter</option>
+                    </select>
+                    <span class="field-hint">ollama = free local model. Cloud providers (anthropic/openai) cost money per query</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Model</label>
+                    <input type="text" id="semantic-model" class="form-input" placeholder="e.g. qwen2.5-coder:7b">
+                    <div id="semantic-model-hints" class="model-hint-list"></div>
+                    <span class="field-hint">The local or cloud model that validates and re-ranks CB results before Claude sees them</span>
+                  </div>
+                  <div class="form-field" id="semantic-endpoint-field">
+                    <label>Endpoint URL</label>
+                    <input type="text" id="semantic-endpoint" class="form-input" placeholder="http://localhost:11434/api/generate">
+                    <span class="field-hint">Ollama default: http://localhost:11434/api/generate</span>
+                  </div>
+                  <div class="form-field" id="semantic-apikey-field">
+                    <label>API Key</label>
+                    <input type="password" id="semantic-apikey" class="form-input" placeholder="Leave blank to keep existing">
+                    <span class="field-hint">Required for anthropic / openai / openrouter. Not needed for ollama</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Temperature</label>
+                    <input type="number" id="semantic-temperature" class="form-input form-input-sm" min="0" max="2" step="0.05">
+                    <span class="field-hint">0.1 recommended — low temperature = consistent, deterministic analysis output</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Timeout (s)</label>
+                    <input type="number" id="semantic-timeout" class="form-input form-input-sm" min="10" max="600">
+                    <span class="field-hint">Max seconds to wait for the AI model to respond. Increase if local AI times out on large queries</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Auto-Analyze Timeout (s)</label>
+                    <input type="number" id="semantic-auto-timeout" class="form-input form-input-sm" min="10" max="600">
+                    <span class="field-hint">Separate timeout for auto-analysis. Set lower than Timeout to fail fast without blocking CB</span>
+                  </div>
+                </div>
+              </div>
+              <div class="form-section">
+                <div class="form-section-title">Pipeline Mode</div>
+                <div class="form-grid">
+                  <div class="form-field">
+                    <label>Pipeline Mode</label>
+                    <select id="semantic-pipeline-mode" class="form-input" onchange="updatePipelineModeHint(this,'semantic-pipeline-mode-hint')">
+                      <option value="simple">simple — CB only, no local AI</option>
+                      <option value="validated">validated — CB + local AI once (default)</option>
+                      <option value="iterative">iterative — CB + local AI + gap fill</option>
+                      <option value="full">full — pre-validate + local AI + gap fill + self-reflect</option>
+                    </select>
+                    <span class="field-hint" id="semantic-pipeline-mode-hint"></span>
+                  </div>
+                  <div class="form-field" id="semantic-max-gap-field">
+                    <label>Max Gap Iterations</label>
+                    <input type="number" id="semantic-max-gap-iterations" class="form-input form-input-sm" min="1" max="3">
+                    <span class="field-hint">Gap search rounds per query — only active in iterative and full modes. 1–3 recommended</span>
+                  </div>
+                </div>
+              </div>
+              <div class="form-section">
+                <div class="form-section-title">RAG Settings</div>
+                <div class="form-grid">
+                  <div class="form-field">
+                    <label>RAG Enabled <span style="opacity:0.6;font-weight:400">(read-only)</span></label>
+                    <label class="toggle"><input type="checkbox" id="semantic-rag-enabled" disabled><span class="toggle-track"></span></label>
+                    <span class="field-hint">Mode is chosen at startup via <code>start_Context_Bridge.bat</code> (Hybrid / Semantic / Keyword). This reflects that choice and cannot be edited here — changing it would conflict with the mode the server was started in.</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Vector Backend</label>
+                    <select id="semantic-embedding-backend" class="form-input">
+                      <option value="hash">hash</option>
+                      <option value="sentence-transformers">sentence-transformers</option>
+                    </select>
+                    <span class="field-hint">Hash is faster and model-free. Sentence-transformers uses the semantic embedding model below.</span>
+                  </div>
+                  <div class="form-field" id="semantic-embedding-model-field">
+                    <label>Embedding Model</label>
+                    <input type="text" id="semantic-embedding-model" class="form-input" placeholder="e.g. all-MiniLM-L6-v2">
+                    <span class="field-hint">Used only when Vector Backend is <code>sentence-transformers</code>.</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Top K Vector</label>
+                    <input type="number" id="semantic-top-k-vector" class="form-input form-input-sm" min="1" max="100">
+                    <span class="field-hint">How many files semantic/vector search fetches as candidates before fusion with keyword results</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Top K Keyword</label>
+                    <input type="number" id="semantic-top-k-keyword" class="form-input form-input-sm" min="1" max="100">
+                    <span class="field-hint">How many files keyword search fetches as candidates before fusion with vector results</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Protected Keyword Count</label>
+                    <input type="number" id="semantic-protected-keyword" class="form-input form-input-sm" min="0" max="50">
+                    <span class="field-hint">Top N keyword results that vector search cannot push down — ensures exact name matches always surface</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Keyword Weight</label>
+                    <input type="number" id="semantic-keyword-weight" class="form-input form-input-sm" min="0" max="10" step="0.05">
+                    <span class="field-hint">Higher = exact name/symbol matches matter more. Raise when queries use specific file or method names</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Vector Weight</label>
+                    <input type="number" id="semantic-vector-weight" class="form-input form-input-sm" min="0" max="10" step="0.05">
+                    <span class="field-hint">Higher = semantic meaning matters more. Raise when queries describe behaviour without exact names</span>
+                  </div>
+                </div>
+              </div>
+              <div class="form-actions">
+                <button class="save-btn" onclick="saveConfig('semantic')">Save Semantic Config</button>
+                <button class="save-btn" id="semantic-restart-btn" onclick="restartContextBridge('semantic')" style="display:none;background:#2563eb;margin-left:8px;">Apply Retrieval Change</button>
+                <button class="save-btn" id="semantic-apply-btn" onclick="applyModel('semantic')" style="display:none;background:#e67e22;margin-left:8px;">⚡ Apply &amp; Restart CB</button>
+                <span id="semantic-restart-status" class="save-msg"></span>
+                <span id="semantic-apply-status" class="save-msg"></span>
+                <span id="semantic-save-msg" class="save-msg"></span>
+              </div>
+            </div>
+
+            <!-- Keyword -->
+            <div class="config-form hidden" id="form-keyword">
+              <div class="form-section">
+                <div class="form-section-title">AI Pipeline — Analysis Stage</div>
+                <div class="form-grid">
+                  <div class="form-field">
+                    <label>Analysis Enabled</label>
+                    <label class="toggle"><input type="checkbox" id="keyword-analysis-enabled"><span class="toggle-track"></span></label>
+                    <span class="field-hint">Turn off to skip local AI analysis — CB results go to Claude directly without ranking or validation</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Auto-Analyze</label>
+                    <label class="toggle"><input type="checkbox" id="keyword-auto-analyze"><span class="toggle-track"></span></label>
+                    <span class="field-hint">Runs local AI analysis automatically inside every search_context_hybrid() call</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Show AI Meta</label>
+                    <label class="toggle"><input type="checkbox" id="keyword-show-ai-meta"><span class="toggle-track"></span></label>
+                    <span class="field-hint">Include model name, provider, and latency in every CB response (ai_meta field)</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Provider</label>
+                    <select id="keyword-provider" class="form-input">
+                      <option value="ollama">ollama (local)</option>
+                      <option value="anthropic">anthropic</option>
+                      <option value="openai">openai</option>
+                      <option value="openrouter">openrouter</option>
+                    </select>
+                    <span class="field-hint">ollama = free local model. Cloud providers (anthropic/openai) cost money per query</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Model</label>
+                    <input type="text" id="keyword-model" class="form-input" placeholder="e.g. qwen2.5-coder:7b">
+                    <div id="keyword-model-hints" class="model-hint-list"></div>
+                    <span class="field-hint">The local or cloud model that validates and re-ranks CB results before Claude sees them</span>
+                  </div>
+                  <div class="form-field" id="keyword-endpoint-field">
+                    <label>Endpoint URL</label>
+                    <input type="text" id="keyword-endpoint" class="form-input" placeholder="http://localhost:11434/api/generate">
+                    <span class="field-hint">Ollama default: http://localhost:11434/api/generate</span>
+                  </div>
+                  <div class="form-field" id="keyword-apikey-field">
+                    <label>API Key</label>
+                    <input type="password" id="keyword-apikey" class="form-input" placeholder="Leave blank to keep existing">
+                    <span class="field-hint">Required for anthropic / openai / openrouter. Not needed for ollama</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Temperature</label>
+                    <input type="number" id="keyword-temperature" class="form-input form-input-sm" min="0" max="2" step="0.05">
+                    <span class="field-hint">0.1 recommended — low temperature = consistent, deterministic analysis output</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Timeout (s)</label>
+                    <input type="number" id="keyword-timeout" class="form-input form-input-sm" min="10" max="600">
+                    <span class="field-hint">Max seconds to wait for the AI model to respond. Increase if local AI times out on large queries</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Auto-Analyze Timeout (s)</label>
+                    <input type="number" id="keyword-auto-timeout" class="form-input form-input-sm" min="10" max="600">
+                    <span class="field-hint">Separate timeout for auto-analysis. Set lower than Timeout to fail fast without blocking CB</span>
+                  </div>
+                </div>
+              </div>
+              <div class="form-section">
+                <div class="form-section-title">Pipeline Mode</div>
+                <div class="form-grid">
+                  <div class="form-field">
+                    <label>Pipeline Mode</label>
+                    <select id="keyword-pipeline-mode" class="form-input" onchange="updatePipelineModeHint(this,'keyword-pipeline-mode-hint')">
+                      <option value="simple">simple — CB only, no local AI</option>
+                      <option value="validated">validated — CB + local AI once (default)</option>
+                      <option value="iterative">iterative — CB + local AI + gap fill</option>
+                      <option value="full">full — pre-validate + local AI + gap fill + self-reflect</option>
+                    </select>
+                    <span class="field-hint" id="keyword-pipeline-mode-hint"></span>
+                  </div>
+                  <div class="form-field" id="keyword-max-gap-field">
+                    <label>Max Gap Iterations</label>
+                    <input type="number" id="keyword-max-gap-iterations" class="form-input form-input-sm" min="1" max="3">
+                    <span class="field-hint">Gap search rounds per query — only active in iterative and full modes. 1–3 recommended</span>
+                  </div>
+                </div>
+              </div>
+              <div class="form-section">
+                <div class="form-section-title">RAG Settings</div>
+                <div class="form-grid">
+                  <div class="form-field">
+                    <label>RAG Enabled <span style="opacity:0.6;font-weight:400">(read-only)</span></label>
+                    <label class="toggle"><input type="checkbox" id="keyword-rag-enabled" disabled><span class="toggle-track"></span></label>
+                    <span class="field-hint">Mode is chosen at startup via <code>start_Context_Bridge.bat</code> (Hybrid / Semantic / Keyword). This reflects that choice and cannot be edited here — changing it would conflict with the mode the server was started in.</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Vector Backend</label>
+                    <select id="keyword-embedding-backend" class="form-input">
+                      <option value="hash">hash</option>
+                      <option value="sentence-transformers">sentence-transformers</option>
+                    </select>
+                    <span class="field-hint">Relevant when this config is started in a RAG mode. Hash is faster; sentence-transformers uses the model below.</span>
+                  </div>
+                  <div class="form-field" id="keyword-embedding-model-field">
+                    <label>Embedding Model</label>
+                    <input type="text" id="keyword-embedding-model" class="form-input" placeholder="e.g. all-MiniLM-L6-v2">
+                    <span class="field-hint">Used only when Vector Backend is <code>sentence-transformers</code>.</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Top K Vector</label>
+                    <input type="number" id="keyword-top-k-vector" class="form-input form-input-sm" min="1" max="100">
+                    <span class="field-hint">How many files semantic/vector search fetches as candidates before fusion with keyword results</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Top K Keyword</label>
+                    <input type="number" id="keyword-top-k-keyword" class="form-input form-input-sm" min="1" max="100">
+                    <span class="field-hint">How many files keyword search fetches as candidates before fusion with vector results</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Protected Keyword Count</label>
+                    <input type="number" id="keyword-protected-keyword" class="form-input form-input-sm" min="0" max="50">
+                    <span class="field-hint">Top N keyword results that vector search cannot push down — ensures exact name matches always surface</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Keyword Weight</label>
+                    <input type="number" id="keyword-keyword-weight" class="form-input form-input-sm" min="0" max="10" step="0.05">
+                    <span class="field-hint">Higher = exact name/symbol matches matter more. Raise when queries use specific file or method names</span>
+                  </div>
+                  <div class="form-field">
+                    <label>Vector Weight</label>
+                    <input type="number" id="keyword-vector-weight" class="form-input form-input-sm" min="0" max="10" step="0.05">
+                    <span class="field-hint">Higher = semantic meaning matters more. Raise when queries describe behaviour without exact names</span>
+                  </div>
+                </div>
+              </div>
+              <div class="form-actions">
+                <button class="save-btn" onclick="saveConfig('keyword')">Save Keyword Config</button>
+                <button class="save-btn" id="keyword-restart-btn" onclick="restartContextBridge('keyword')" style="display:none;background:#2563eb;margin-left:8px;">Apply Retrieval Change</button>
+                <button class="save-btn" id="keyword-apply-btn" onclick="applyModel('keyword')" style="display:none;background:#e67e22;margin-left:8px;">⚡ Apply &amp; Restart CB</button>
+                <span id="keyword-restart-status" class="save-msg"></span>
+                <span id="keyword-apply-status" class="save-msg"></span>
+                <span id="keyword-save-msg" class="save-msg"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+
+
+      <!-- ABOUT & METHODOLOGY ─────────────────────────────────────────── -->
+      <div id="about" class="section">
+        <div class="section-header">
+          <div>
+            <div class="section-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+              About & Methodology
+            </div>
+            <div class="section-help">How Context Bridge metrics are measured and why you can trust them.</div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <!-- Column 1 -->
+          <div style="display:flex; flex-direction:column; gap:16px;">
+            <!-- Token Savings -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                  Token Savings Methodology
+                </div>
+              </div>
+              <div style="padding:16px; font-size:13px; line-height:1.6; color:var(--text-sec);">
+                <p style="margin-bottom:12px;"><strong><span style="color:var(--text);">1. A Fair Baseline</span></strong><br>
+                We do not inflate savings by comparing snippets against your entire repository. We only compare the size of the extracted snippets against the exact size of the specific files retrieved.</p>
+                
+                <p style="margin-bottom:12px;"><strong><span style="color:var(--text);">2. Accurate Proportions</span></strong><br>
+                The system uses characters as a highly efficient proxy for tokens. Because we calculate a ratio <code>1 - (delivered / full)</code>, the percentage closely approximates token savings ratios in practice without the overhead of heavy tokenizer libraries.</p>
+                
+                <p><strong><span style="color:var(--text);">3. Real Input Tokens</span></strong><br>
+                The savings shown explicitly represent <em>Input Tokens</em> (prompt tokens), directly reducing LLM API costs and preventing context-window overload.</p>
+              </div>
+            </div>
+
+            <!-- Architecture -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                  Architecture Overview
+                </div>
+              </div>
+              <div style="padding:16px; font-size:13px; line-height:1.6; color:var(--text-sec);">
+                <p>The Context Bridge retrieval flow typically follows this pipeline:</p>
+                <div style="margin:10px 0; padding:10px; background:var(--bg-sec); border-radius:4px; font-family:monospace; text-align:center; color:var(--text);">
+                  query &rarr; retrieval &rarr; ranking &amp; extraction &rarr; filtering &rarr; LLM
+                </div>
+                <p>This ensures that the final payload delivered to the AI is a compact and highly relevant context.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Column 2 -->
+          <div style="display:flex; flex-direction:column; gap:16px;">
+            <!-- Telemetry & Success -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                  Telemetry & Success Scoring
+                </div>
+              </div>
+              <div style="padding:16px; font-size:13px; line-height:1.6; color:var(--text-sec);">
+                <p style="margin-bottom:12px;"><strong><span style="color:var(--text);">1. Explicit Outcomes (Gold Standard)</span></strong><br>
+                For the highest reliability, metrics are based on actual file usage and task outcomes. AI agents are instructed to report the outcome of a coding task using the <code>record_outcome</code> tool.</p>
+                
+                <p style="margin-bottom:12px;"><strong><span style="color:var(--text);">2. Fallback Heuristics</span></strong><br>
+                If an AI fails to report an outcome, the dashboard falls back to local telemetry signals. Low confidence, missing files, and failed tool execution are heuristic indicators, not definitive failures.</p>
+                
+                <p style="margin-bottom:12px;"><strong><span style="color:var(--text);">3. Real-World Evaluation</span></strong><br>
+                We evaluate based on real-world confidence and actual file usage. Real-world usage complements benchmark datasets rather than replacing them, providing a dynamic view of how the system solves organic developer problems.</p>
+                
+                <p><strong><span style="color:var(--text);">4. Confidence Scores</span></strong><br>
+                The system generates a confidence score for each query. Confidence reflects retrieval relevance, not answer correctness. It is a probabilistic measure of how well the retrieved code matches the intent of your search.</p>
+              </div>
+            </div>
+
+            <!-- Privacy -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  Privacy & Local Operation
+                </div>
+              </div>
+              <div style="padding:16px; font-size:13px; line-height:1.6; color:var(--text-sec);">
+                <p>Context Bridge is designed to operate entirely locally. Search queries, file paths, token statistics, and agent outcomes remain on the user's machine and are not transmitted to external services by Context Bridge itself. No source code bodies, proprietary secrets, or telemetry data are transmitted outside the local environment by Context Bridge itself. Any optional integrations or LLM providers are governed by their own privacy policies and are outside the scope of Context Bridge.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- ADVANCED ─────────────────────────────────────────────────────────── -->
+
+      <!-- EVAL ──────────────────────────────────────────────────────────── -->
+      <div id="eval" class="section">
+        <div class="section-header">
+          <div>
+            <div class="section-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              Eval Comparison
+            </div>
+            <div class="section-help">Retrieval quality across keyword, hybrid, and semantic using saved eval question sets.</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="table-wrap"><table id="evalComparison"></table></div>
+        </div>
+      </div>
+
+      <!-- CODE QUALITY ──────────────────────────────────────────────────── -->
+      <div id="code-quality" class="section">
+        <div class="section-header">
+          <div>
+            <div class="section-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              Code Location Quality
+            </div>
+            <div class="section-help">Whether ContextBridge found the exact owner, symbol, line hint, dependency chain, and code block.</div>
+          </div>
+        </div>
+        <div class="chip-row" id="codeLocationCards"></div>
+        <div class="grid-2" style="margin-top:0;">
+          <div class="panel">
+            <div class="panel-header"><div class="panel-title">Eval Metrics</div></div>
+            <div class="panel-body no-pad"><div class="table-wrap"><table id="codeLocationEval"></table></div></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><div class="panel-title">Recent Activity</div></div>
+            <div class="panel-body no-pad"><div class="table-wrap"><table id="codeLocationRecent"></table></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- GRAPHIFY ──────────────────────────────────────────────────────── -->
+      <div id="graphify" class="section">
+        <div class="section-header">
+          <div>
+            <div class="section-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+              Graphify Enrichment
+            </div>
+            <div class="section-help">Where Graphify still needs better nodes, edges, or source locations.</div>
+          </div>
+        </div>
+        <div class="chip-row" id="graphifyEnrichmentCards"></div>
+        <div class="grid-2" style="margin-top:0;">
+          <div class="panel">
+            <div class="panel-header"><div class="panel-title">Priorities</div></div>
+            <div class="panel-body no-pad"><div class="table-wrap"><table id="graphifyEnrichmentTable"></table></div></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><div class="panel-title">Quality Suite</div></div>
+            <div class="panel-body">
+              <div class="chip-row" id="qualitySuiteCards"></div>
+              <div class="table-wrap"><table id="qualitySuiteTable"></table></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main-area -->
+</div><!-- /shell -->
+
+<!-- Toast container -->
+<div id="toastContainer"></div>
+
+<script src="../usage/dashboard_stats.js?v=20260624"></script>
+<script src="dashboard.js?v=20260624"></script>
+</body>
+</html>

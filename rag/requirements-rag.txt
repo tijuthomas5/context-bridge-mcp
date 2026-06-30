@@ -1,0 +1,6 @@
+# Optional dependency for stronger local embeddings in later phases.
+# Phase 2 works without this file by using the built-in hash backend.
+numpy>=1.24.0,<3.0
+sentence-transformers>=2.7.0,<4.0
+# Optional: install for HNSW vector search when index exceeds 5000 chunks
+# hnswlib

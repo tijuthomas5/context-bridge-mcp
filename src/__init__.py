@@ -1,0 +1,2 @@
+"""ContextBridge local search package."""
+

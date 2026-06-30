@@ -1,0 +1,72 @@
+# How To Use ContextBridge (CB) Effectively
+
+---
+
+## What CB Does
+
+ContextBridge is a keyword + vector retrieval engine.
+It finds the right source files for your query and passes them to an AI (Qwen/Claude) for analysis.
+CB is NOT an AI — it matches words. The AI reasons over what CB finds.
+
+---
+
+## The Two Tags
+
+  >>SEARCH: <what CB searches for — keep this short and focused>
+  >>TASK:   <what the AI must do — full context goes here>
+
+CB only sees >>SEARCH:. The AI sees both.
+
+---
+
+## ⚠️  WHEN TO USE A SHORT >>SEARCH: VS SENDING THE FULL DESCRIPTION
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ SEND AS-IS in >>SEARCH: — short bug, 1 module, 1-5 sentences:
+
+  >>SEARCH: When I click Save on the checkout form, the page throws a 500 error.
+            Steps: open cart → checkout tab → edit order → click Save.
+
+  Why it works: short, one module, one clear action. CB finds the right files cleanly.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+❌ DO NOT send a long narrative in >>SEARCH: — multiple modules, many symptoms:
+
+  >>SEARCH: (500-word report mentioning orders, payment, inventory, shipping,
+             catalog, invoicing, refunds all in one block)
+
+  Why it fails: CB matches every module name and returns files for all of them.
+                The root cause file gets buried under noise.
+
+  ✅ CORRECT WAY — split it:
+  >>SEARCH: order cart not refreshed after price correction
+  >>TASK:   (paste the full 500-word report here — Claude reads this, not CB)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SIMPLE RULE:
+  - 1 module + 1 clear action                → full text in >>SEARCH: is fine
+  - Multiple modules OR long narrative        → short >>SEARCH: + full >>TASK:
+
+You CAN send long queries — CB will return results either way.
+But if you want accurate, root-cause-focused results, keep >>SEARCH: short.
+
+---
+
+## Example — Full Correct Usage
+
+>>SEARCH: order cart not invalidated after price correction
+>>TASK: Order ORD-9022 is blocked from checkout. An order line price was
+        corrected but the UI cart cache was not refreshed. The system marked a cancelled
+        line as ACTIVE. Now payment, invoicing, and checkout are all blocked.
+        Find the cache invalidation bug and fix it.
+
+CB searches → finds order/cart files → Qwen ranks them → Claude fixes the bug.
+
+---
+
+## Token Cost
+
+- CB retrieval: free (no AI, pure index lookup)
+- Qwen (local AI): analyses CB results only — token cost stays low regardless of >>TASK: length
+- Claude (cloud AI): reads full >>TASK: — this is where token cost applies, but Claude
+  needs the full context to implement correctly so this is expected and correct

@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "workspace_root": "..",
+  "index_path": "data/context_index.json",
+  "pipeline": {
+    "_help": "Analysis stage that runs between ContextBridge retrieval and the coding model.",
+    "analysis_stage": {
+      "_help": "Set enabled=true and configure provider/model to activate. Providers: ollama, anthropic, openai, openrouter. When auto_analyze=true, analysis runs inside search_context_hybrid().",
+      "enabled": true,
+      "auto_analyze": true,
+      "auto_analyze_timeout_seconds": 360,
+      "provider": "ollama",
+      "model": "qwen2.5-coder:7b",
+      "timeout_seconds": 360,
+      "num_ctx": 8192,
+      "temperature": 0.1,
+      "api_key": null,
+      "_help_api_key": "Leave null for Ollama (local). Set to your API key string for anthropic/openai/openrouter providers.",
+      "_help_pipeline_mode": "simple=CB only. validated=CB+LocalAI once. iterative=CB+LocalAI+gap fill. full=pre-validate+LocalAI+gap fill+self-reflect.",
+      "pipeline_mode": "iterative",
+      "_help_max_gap_iterations": "Gap search rounds (iterative/full only). 1-3.",
+      "max_gap_iterations": 2,
+      "endpoint": "http://localhost:11434/api/generate"
+    }
+  },
+  "settings": {
+    "_help": "Keys starting with _ are documentation only and ignored by runtime.",
+    "runtime": {
+      "_help": "Set project_profile to your profile name to load rules/projects/<name>_profile.py, or leave \"default\" for generic domain-agnostic ranking.",
+      "enable_code_locations": true,
+      "project_profile": "default",
+      "rules_root": "context_bridge/rules"
+    },
+    "rag": {
+      "_help": "Hybrid keyword-first retrieval with guarded vector assistance.",
+      "enabled": true,
+      "default_mode": "hybrid",
+      "embedding_backend": "hash",
+      "embedding_model": "all-MiniLM-L6-v2",
+      "top_k_vector": 12,
+      "top_k_keyword": 20,
+      "protected_keyword_count": 8,
+      "keyword_weight": 1,
+      "vector_weight": 0.35,
+      "require_scope_match": true,
+      "min_vector_score": 0.0,
+      "fusion_strategy": "weighted_rrf",
+      "lazy_load": true
+    },
+    "discovery": {
+      "_help": "Point these at YOUR application's Graphify output. Replace the example paths below with your real source folders. 'graphify-out' is the central required root.",
+      "required_roots": [
+        {"path": "graphify-out", "kind": "graphify", "role": "central_graphify", "required": true}
+      ],
+      "optional_roots": [
+        {"path": "docs", "kind": "docs", "role": "docs", "required": false}
+      ],
+      "discovery_roots": [
+        {"path": "your_backend", "kind": "graphify", "role": "ownership_graphify", "match_dir_name": "graphify-out", "required_if_parent_exists": true},
+        {"path": "your_frontend", "kind": "graphify", "role": "ownership_graphify", "match_dir_name": "graphify-out", "required_if_parent_exists": true}
+      ],
+      "ownership_graph_roots": [
+        {"path": "your_backend/Services/graphify-out", "area": "backend-services", "pack": "secondary-ownership"},
+        {"path": "your_frontend/src/graphify-out", "area": "frontend", "pack": "secondary-ownership"}
+      ],
+      "source_root_prefixes": ["your_backend", "your_frontend", "graphify-out", "docs"],
+      "required_root_files": {"graphify-out": ["manifest.json"]}
+    },
+    "indexing": {
+      "_help": "Which Graphify and knowledge files are indexed.",
+      "include_file_names": ["GRAPH_REPORT.md", "graph.json", "source-files.txt", "scope-summary.md", "manifest.json", "index.md"],
+      "include_path_contains": ["/behavior/", "\\behavior\\"],
+      "assistant_include_extensions": [".md", ".json"],
+      "max_text_file_bytes": 1048576,
+      "max_graph_nodes_per_doc": 200,
+      "max_graph_edges_per_doc": 300,
+      "max_graph_chunks_per_graph": 250,
+      "max_graph_chunk_nodes": 80,
+      "max_graph_chunk_edges": 120
+    },
+    "code_locations": {
+      "enable_code_blocks": true,
+      "code_block_context_before": 4,
+      "code_block_context_after": 8,
+      "code_block_max_blocks": 6,
+      "line_verify_window": 12
+    },
+    "symbols": {
+      "enable_symbol_hints": true,
+      "symbol_capture_node_types": ["controller_action", "service_method", "job_method", "ui_function", "controller_class", "service_class", "job_class", "ui_component"],
+      "max_symbol_hints_per_doc": 40
+    },
+    "dependencies": {
+      "enable_dependency_chain": true,
+      "dependency_edge_types": ["calls", "uses", "depends_on", "maps", "reads", "writes", "publishes", "subscribes"],
+      "max_dependency_hints_per_doc": 40
+    },
+    "search": {
+      "file_candidate_documents": 200,
+      "max_results": 12,
+      "max_files": 25
+    },
+    "ignore": {
+      "ignore_parts": [".git", ".vs", ".vscode", "node_modules", "bin", "obj", "dist", "build", "cache", ".cache", "test-results"],
+      "ignore_extensions": [".zip", ".7z", ".png", ".jpg", ".jpeg", ".webp", ".log", ".xlsx"]
+    }
+  }
+}

@@ -1,0 +1,151 @@
+Role: Graphify Validation Architect for ContextBridge
+
+Objective:
+This repository already has Graphify data and it is expected to already follow the ContextBridge-friendly structure. Your job is to validate that assumption, identify any remaining gaps, and improve only what is necessary.
+
+Context:
+Graphify is already present in this repository. It may already be correctly structured for ContextBridge, but that must be verified from the actual files and folders, not assumed.
+
+Important rule:
+Do not assume folder names such as `main_ui`, `main_service`, `src`, `client`, `server`, `frontend`, or `backend`.
+
+You must first inspect the repo and infer:
+- frontend/UI source roots
+- backend/service/API source roots
+- shared/core/common roots
+- module/vertical roots
+- Graphify roots
+
+If these boundaries are unclear after inspection, stop and ask the user for:
+- frontend root(s)
+- backend root(s)
+- shared/core root(s)
+- Graphify root(s)
+
+What ContextBridge expects:
+1. A central Graphify root such as:
+   graphify-out/
+
+2. Business/flow packs under module folders such as:
+   graphify-out/<module>/<pack>/behavior/
+   graphify-out/<module>/<pack>/raw/source-files.txt
+   graphify-out/<module>/<pack>/raw/graph.json
+
+3. Folder-level ownership graphs near source areas where relevant:
+   <source-area>/graphify-out/graph.json
+
+4. Optional additive enrichments where needed:
+   enrichment/dependency-edges.enrichment.json
+
+Your tasks:
+1. Inspect the repository structure.
+2. Inspect all existing Graphify folders and files.
+3. Validate whether the Graphify structure already matches ContextBridge needs.
+4. Classify the result into:
+   - fully usable
+   - usable with gaps
+   - structurally incomplete
+5. Report:
+   - what is already correct
+   - what is missing
+   - what is weak
+   - what should be improved
+   - what should be ignored
+6. Only create or update additive outputs if needed.
+7. Do not rewrite or replace existing Graphify data unless explicitly required.
+
+Validation rules:
+- Do not assume that Graphify existing means Graphify is sufficient.
+- Check whether packs actually contain:
+  - behavior docs
+  - raw/source-files.txt
+  - raw/graph.json
+- For each source-files.txt that exists, verify it includes ALL layers of the stack:
+    controller, service, entity/model, DTO, UI page/component.
+  Service files are the most commonly omitted. A pack missing its service file means
+  CB cannot route queries to the root cause — it will find symptom files instead.
+  If service files are missing from source-files.txt, add them as an additive fix.
+- Do not stop at controller/service/entity/DTO/UI only. If the workflow depends on
+  runtime execution or cross-module handoff, also verify the pack includes the
+  true runtime owner files such as:
+  - job / scheduler files
+  - resolver / policy / middleware / filter files
+  - bridge / handoff files between modules
+  - print/export controller or API files
+  - workspace/action-panel/router entry files when the workflow is shell-driven
+  If these files are part of the real debugging path but missing from the pack,
+  add them as additive fixes.
+- If the pack already contains the right files but weak queries still drift to
+  adjacent files, verify whether the behavior layer contains explicit retrieval
+  wording for the workflow. If not, add an additive behavior note such as
+  `behavior/retrieval-hints.md` that names:
+  - the real owner files
+  - the runtime/bridge files
+  - the business/symptom terms developers actually use in bug reports
+- Ensure the primary owner files named in `behavior/retrieval-hints.md` stay aligned
+  with `raw/source-files.txt`. Do not name unrelated owners in retrieval hints if the
+  pack's actual source-files already point to a different owner path.
+- Treat the following as mandatory retrieval-hints cases when the files already
+  exist but retrieval is weak:
+  - admin configuration / audit / permissions pages for operational modules
+  - dashboard shell/layout/global-search entry
+  - legacy shell / overlay / connection-state UI
+  - drawer/runtime/payment-side POS UI
+  - workspace context/layout/view owners
+  - startup/bootstrap/app-entry/runtime provider owners
+  - reports/analytics/audit pages
+  - receipt-template designer/list/editor pages
+  - organization/store/terminal settings pages
+  - investigation file preview/highlight/delete APIs
+  - service catalog / pricing / billable charge APIs
+- If a pack is about admin operations or runtime configuration, make sure
+  `behavior/retrieval-hints.md` names the admin API/page/permission owners for that
+  pack, not only nearby runtime or workflow files from sibling modules.
+- In retrieval hints, include real bug wording even when the top-level module word is
+  omitted. Example patterns: `event images` + `linked order details`, `treatment master`
+  + `staff availability`, `report guard` + `exception filter`.
+- Check whether ownership graphs exist near source areas.
+- Check whether the data is useful for:
+  - business/workflow routing
+  - owner-file routing
+  - dependency tracing
+  - UI/API/controller/service/entity mapping
+- Validate owner completeness for each important pack:
+  - root mutation/state owner
+  - runtime consumer
+  - bridge/handoff owner
+  - UI/API entry owner
+  If only symptom/shell/history files are present, mark the pack as weak even if
+  Graphify files technically exist.
+
+If Graphify is already good enough:
+- do not make unnecessary changes
+- only report readiness and minor recommendations
+
+If Graphify has small gaps:
+- fill only those gaps
+- prefer additive files
+- prefer enrichment over replacement
+
+Required output format:
+1. Repo source-root understanding
+2. Existing Graphify inventory
+3. Validation result
+4. Already usable for ContextBridge
+5. Missing or weak areas
+6. Additive improvements to make
+7. Risks or assumptions
+8. Final implementation summary
+
+Important constraints:
+- Do not delete existing Graphify data.
+- Do not replace existing files unless explicitly required.
+- Prefer additive improvements.
+- Preserve existing Graphify investment.
+- Optimize for ContextBridge usefulness, not theoretical completeness.
+
+Success criteria:
+- The repository’s Graphify structure is validated against ContextBridge needs.
+- Any missing but high-value gaps are identified clearly.
+- If needed, only minimal additive improvements are made.
+- Existing correct Graphify data remains intact.

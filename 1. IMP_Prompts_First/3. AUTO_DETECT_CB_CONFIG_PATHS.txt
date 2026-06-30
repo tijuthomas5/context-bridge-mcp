@@ -1,0 +1,153 @@
+After completing the update for the target config file, the same prompt may be rerun for:
+- `context_bridge/config.semantic.json`
+- `context_bridge/config.json`
+by changing only the target config file path.
+
+
+
+Prompt:
+
+You are configuring ContextBridge for this repository.
+
+Profile name: "give your profile name here" - if this is not filed please stop the task and use to fill it.
+
+Target config file:
+`context_bridge/config.hybrid.json`
+
+Your job:
+1. Inspect the repository from the real filesystem.
+2. Open the target config file.
+3. Resolve the effective workspace root from that config file using its `workspace_root` field.
+4. Automatically detect Graphify-related folders from the real filesystem starting from that resolved workspace root.
+5. Update only `settings.discovery` in the target config file.
+6. Preserve every other config section unchanged.
+7. If something is ambiguous, prefer real existing paths and output a short warning instead of inventing values.
+
+Core rules:
+- All configured paths must be workspace-relative to the resolved `workspace_root`, not relative to the folder containing the config file.
+- Never use absolute paths.
+- Do not invent folders.
+- Do not keep placeholders like `your_backend` or `your_frontend`.
+- If a path does not exist, do not add it.
+- Keep JSON valid and properly formatted.
+- Change only `settings.discovery`.
+
+Detection rules:
+
+A. `required_roots`
+- Find the central workspace-level `graphify-out`.
+- Ensure it is present as:
+  `{"path":"graphify-out","kind":"graphify","role":"central_graphify","required":true}`
+  If the central workspace-level graphify-out does not exist, output a short warning instead of inventing it.
+
+B. `optional_roots`
+- If `docs` exists at workspace root, include it as:
+  `{"path":"docs","kind":"docs","role":"docs","required":false}`
+- Also include other real documentation roots only if they clearly exist and are intentionally part of the workspace, for example:
+  - `context_bridge/docs`
+  - `<module>/docs`
+  - `<app>/docs`
+  - `<service>/knowledge` (e.g. a knowledge base or assistant content folder if your project has one)
+- If both `docs` and `context_bridge/docs` exist, include both only if both are real and intentionally distinct.
+- Keep only real existing optional roots.
+- Do not invent support paths.
+
+C. `discovery_roots`
+- Automatically find parent source/app folders that should be scanned for nested `graphify-out` folders.
+- Support any layout:
+  - single app
+  - split backend/frontend
+  - multiple modules/apps
+  - monorepo-style packages
+- Do not assume folder names like `main_service`, `main_ui`, or `assistant_service`.
+- Prefer stable parent roots like:
+  - `main_service`, `main_ui`
+  - `src`, `services`, `apps`, `packages`
+  - `backend`, `frontend`
+  - top-level module/app folders that clearly own code
+- Add only the highest useful parent folders, not every deep child folder.
+- Do not add a child folder if its parent discovery root already covers it well.
+- Avoid redundant overlapping roots unless they represent clearly separate app trees.
+- Each entry must look like:
+  `{"path":"<parent>","kind":"graphify","role":"ownership_graphify","match_dir_name":"graphify-out","required_if_parent_exists":true}`
+  
+  If both docs and context_bridge/docs exist, include both only if both are real and intentionally distinct.
+
+D. `ownership_graph_roots`
+- Automatically find all real nested `graphify-out` folders under actual code/app/source trees.
+- Exclude generated or copied Graphify folders under build/output/cache paths such as:
+  - `bin`
+  - `obj`
+  - `dist`
+  - `build`
+  - `cache`
+  - `.cache`
+  - `raw/cache`
+  - `raw/corpus`
+- Add each real nested Graphify folder as:
+  `{"path":"<nested path>","area":"<short-label>","pack":"secondary-ownership"}`
+- `area` must be a short stable slug derived from the parent folder purpose.
+- Examples:
+  - `backend-services`
+  - `backend-controllers`
+  - `frontend-components`
+  - `frontend-api`
+  - `module-orders`
+- Do not invent ownership roots that do not exist.
+
+E. `source_root_prefixes`
+- Build this from the real source/app roots implied by the project and Graphify source-file references.
+- Include code/app roots that own files referenced by Graphify.
+- Include central content roots if they exist, such as:
+  - `graphify-out`
+  - `assistant_service`
+  - `docs`
+  - any included docs roots
+- Deduplicate values.
+- Keep them at meaningful root level, not overly deep paths.
+
+F. `required_root_files`
+- Ensure:
+  `"required_root_files": { "graphify-out": ["manifest.json"] }`
+
+How to reason:
+- The central `graphify-out` is always required if it exists at the resolved workspace root.
+- Nested `graphify-out` folders must be auto-detected from the real filesystem.
+- Detect real app/source roots automatically from the filesystem.
+- Prefer real existing paths over project-specific naming conventions.
+
+Editing rules:
+- Replace placeholder entries completely.
+- Keep valid existing real entries if they still exist.
+- Remove placeholder or nonexistent entries.
+- Do not modify:
+  - `pipeline`
+  - `runtime`
+  - `rag`
+  - `indexing`
+  - `code_locations`
+  - `symbols`
+  - `dependencies`
+  - `search`
+  - `ignore`
+
+Before finishing, verify:
+- every configured path exists relative to the resolved workspace root
+- all configured paths are relative
+- no placeholder values remain
+- central `graphify-out` is present
+- discovery roots are not unnecessarily redundant
+- ownership graph roots only include real nested `graphify-out` folders
+- optional/support paths only include real existing paths
+- JSON is valid
+
+Output format:
+1. The final full contents of the target config file
+2. Then a short summary:
+   - resolved workspace root
+   - central graphify root found
+   - optional roots selected
+   - discovery roots selected
+   - ownership graph roots selected
+   - source root prefixes selected
+   - any ambiguous cases the developer should verify

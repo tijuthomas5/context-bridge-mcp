@@ -1,0 +1,43 @@
+# Graphify First, Then ContextBridge Setup
+
+Before running setup, make sure the repository’s Graphify data is ready.
+Install Graphify first, then run the setup script for your OS.
+
+## Required Order
+
+1. Prepare Graphify data
+   - If there is **no Graphify data**:
+     create the initial Graphify structure first.
+
+   - If Graphify data **exists but is partial, weak, or not in the required structure**:
+     normalize it first.
+
+   - If Graphify data **already exists and appears correct**:
+     validate it first.
+
+2. Run ContextBridge setup
+   - After Graphify is ready, run the setup for your OS:
+
+   **Windows:**
+   ```bat
+   context_bridge\setup\windows\setup_context_bridge.bat
+   ```
+   **Mac:**
+   ```bash
+   bash context_bridge/setup/mac/setup_context_bridge.sh
+   ```
+   **Linux:**
+   ```bash
+   bash context_bridge/setup/linux/setup_context_bridge.sh
+   ```
+
+## Why This Order Matters
+The setup script builds the ContextBridge index from the Graphify data that exists at the time of setup.
+If Graphify is missing, incomplete, or in the wrong structure, ContextBridge will still build an index, but the results may be weak or incomplete.
+
+## If Graphify Changes Later
+If you add, fix, normalize, or enrich Graphify data after setup, run the setup script again for your OS.
+This rebuilds the ContextBridge index using the latest Graphify data.
+
+## Simple Rule
+Graphify ready first → ContextBridge setup second → If Graphify changes later, run setup again

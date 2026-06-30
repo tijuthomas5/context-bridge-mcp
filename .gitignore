@@ -1,0 +1,95 @@
+__pycache__/
+*.py[cod]
+.fuse_hidden*
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+archive/
+Questions/
+
+# Generated local index and runtime telemetry — all data/ files are machine-specific.
+data/
+usage/
+usage/*.jsonl
+usage/dashboard_stats.json
+usage/dashboard_stats.js
+usage/rules_cache_reset.sentinel
+
+#  docs — not for public distribution (old location — folder no longer exists)
+READ_ME_Second/
+
+# ─── PRIVATE / PROJECT-SPECIFIC — never publish ──────────────────────────
+# Real runtime configs (ship the *.example.json templates instead).
+config.json
+config.hybrid.json
+config.semantic.json
+# Project-specific ranking profiles + rules (the swappable domain plugin).
+# Catch-all: any *_profile.py / *_rules.json except the shipped example template.
+rules/projects/*_profile.py
+rules/projects/*_rules.json
+!rules/projects/example_profile.py
+!rules/projects/example_rules.json
+# ─────────────────────────────────────────────────────────────────────────
+
+# ─── DEVELOPER ARTIFACTS — not needed by downloaders, not published ──────
+# Runtime analysis cache (regenerated per machine; holds local project data).
+cache/
+# All test data and scripts are machine/project-specific — exclude the entire folder.
+tests/
+tests/test_graphify_pack_regressions.py
+tests/cb_partial_failed_questions.json
+tests/cb_partial_failed_questions_gauge.json
+tests/cb_q253_single.json
+tests/cb_remaining12_retest.json
+tests/cb_true_failed_5_subset.json
+tests/cb_true_remaining5_retest.json
+tests/cb_modes_probe.py
+tests/audit_benchmark_log_results.py
+scripts/backup_graphify_out.ps1
+Benchmark*/
+tests/client_test.py
+tests/test_cb_profiles.py
+tests/verify_extraction_modes.py
+tests/verify_mode_semantics.py
+tests/cb_real_questions_30.txt
+tests/cb_real_questions_30.md
+tests/cb_real_world_benchmark_300.json
+tests/cb_real_world_benchmark_300_audit.json
+tests/cb_test_results/
+scripts/smoke_test_*.py
+scripts/e2e_analysis_test*.py
+scripts/run_analysis_tmp.py
+scripts/probe_search_context.py
+scripts/smoke_test_analysis.py
+scripts/smoke_test_hybrid_fusion.py
+scripts/generate_real_benchmark_300.py
+change_port.bat
+run_full_quality_suite.bat
+start_mcp_server.bat
+start_mcp_server_hybrid.bat
+evals/
+archive/artifacts/
+archive/manual-tests/
+# ─────────────────────────────────────────────────────────────────────────
+
+# Local logs/temp files.
+*.log
+*.tmp
+*.bak
+
+# Local/manual verification scripts for this workspace.
+test_code_deep.py
+test_code_loc.py
+test_frontend_edge.py
+test_verification.py
+test_verification_fixed.py
+
+# Local runtime / benchmark / manual review artifacts that often contain
+# project-specific prompts, file names, audit notes, or machine-specific paths.
+usage/*.md
+usage/*.json
+usage/test/
+Questions/
+Start_CB_Test_Mode.bat
