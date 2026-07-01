@@ -4,6 +4,23 @@ All notable changes to ContextBridge MCP will be documented in this file.
 
 ---
 
+## [1.1.0-beta] - 2026-07-02
+
+### Fixed
+- **Dashboard risk classifier** (`scripts/build_dashboard_stats.py`): the `likely_good` result no longer gets automatically disqualified just because usage wasn't reported (`logged_success_but_zero_usage`). Previously this caused effectively all results to fall into `needs_review` even when retrieval quality (confidence, symbol/location/dependency coverage) was strong. CB now falls back to judging the result on its own retrieval-quality signals when usage isn't reported, instead of penalizing it.
+
+### Added
+- **Ranking Profile switcher** in the dashboard Settings panel — lets you view available project profiles and switch the active one from a dropdown (`Apply & Restart CB`), instead of manually editing config files or start scripts (`dashboard_server.py`, `dashboard/dashboard.js`, `dashboard/index.html`).
+- **`chunk_central_graph` guidance** in `docs/1. CONFIG_BEFORE_SETUP.md` — documents enabling per-source-file chunking for more precise symbol/cross-module retrieval.
+- **Outcome-reporting documentation** — `record_outcome()`'s optional `used_suggested_files` / `extra_files_read` fields, and the exact method for computing them (compare CB's `top_files` list against files actually opened/edited), are now documented in `skill/SKILL.md` and `docs/AI_ROUTING_RULES.md`. Reporting these is explicitly optional and left to the user/AI's discretion.
+- **`docs/OVERVIEW.md`** — new "How Outcome Logging Works" section explaining that CB's own event record is immutable ground truth, separate from the AI's self-reported outcome.
+
+### Changed
+- `1. IMP_Prompts_First/2.GENERATE_PROJECT_PROFILE.md` — profile activation instructions updated to include the new dashboard switcher as the recommended option, alongside the existing manual config-file method.
+- `docs/LIMITATIONS.md` — item 9 expanded to note that dashboard grading partly depends on optional AI usage-reporting, and that CB falls back to its own signals when that reporting is skipped.
+
+---
+
 ## [1.0.0-beta] - 2026-06-30
 
 ### Initial Beta Release

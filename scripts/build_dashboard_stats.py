@@ -79,17 +79,80 @@ def read_json(path: Path) -> dict[str, Any]:
         return {"error": f"{path.name} is invalid JSON"}
 
 
+def _read_source_roots() -> list[Path]:
+    """Read source root directories from the active CB config — generic, no hardcoded folder names."""
+    import os
+    config_name = os.environ.get("CONTEXT_BRIDGE_CONFIG", "config.hybrid.json")
+    config_path = PROJECT_ROOT / "context_bridge" / config_name
+    roots: list[Path] = []
+    if not config_path.exists():
+        return roots
+    try:
+        raw = json.loads(config_path.read_text("utf-8"))
+    except Exception:
+        return roots
+    # discovery_roots with kind="graphify" are the actual source trees CB indexes.
+    discovery = (raw.get("settings") or {}).get("discovery") or {}
+    for entry in discovery.get("discovery_roots") or []:
+        if not isinstance(entry, dict):
+            continue
+        rel = entry.get("path", "")
+        if not rel:
+            continue
+        abs_path = PROJECT_ROOT / rel
+        if abs_path.exists() and abs_path.is_dir():
+            roots.append(abs_path)
+    return roots
+
+
+_REPO_INDEX_CACHE_PATH = PROJECT_ROOT / "context_bridge" / "data" / "repo_file_index_cache.json"
+# Invalidation marker: context_index.json is rewritten every time setup runs.
+# If the index is newer than the cache, the cache is stale.
+_CB_INDEX_PATH = PROJECT_ROOT / "context_bridge" / "data" / "context_index.json"
+
+
+def _repo_cache_is_fresh() -> bool:
+    """Cache is fresh if it exists and is newer than context_index.json (2 stat calls only)."""
+    try:
+        cache_mtime = _REPO_INDEX_CACHE_PATH.stat().st_mtime
+        index_mtime = _CB_INDEX_PATH.stat().st_mtime if _CB_INDEX_PATH.exists() else 0
+        return cache_mtime > index_mtime
+    except FileNotFoundError:
+        return False
+
+
 @lru_cache(maxsize=1)
 def build_repo_file_index() -> dict[str, list[str]]:
-    roots = [PROJECT_ROOT / "main_service", PROJECT_ROOT / "main_ui"]
+    """Build filename→[paths] map from the project's source roots.
+
+    Cached to disk — restarts load in milliseconds. Cache is invalidated
+    automatically whenever setup re-runs (context_index.json gets a newer mtime).
+    """
+    if _repo_cache_is_fresh():
+        try:
+            raw = json.loads(_REPO_INDEX_CACHE_PATH.read_text("utf-8"))
+            raw.pop("_meta", None)
+            return raw
+        except Exception:
+            pass  # fall through to rebuild
+
+    # Cache miss or stale — full rglob (happens once after each setup run).
     index: dict[str, list[str]] = {}
-    for root in roots:
-        if not root.exists():
-            continue
+    for root in _read_source_roots():
         for path in root.rglob("*"):
             if not path.is_file():
                 continue
-            index.setdefault(path.name.lower(), []).append(str(path.relative_to(PROJECT_ROOT)).replace("\\", "/"))
+            index.setdefault(path.name.lower(), []).append(
+                str(path.relative_to(PROJECT_ROOT)).replace("\\", "/")
+            )
+
+    try:
+        _REPO_INDEX_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        payload = {**index, "_meta": {"built_at": __import__("time").time()}}
+        _REPO_INDEX_CACHE_PATH.write_text(json.dumps(payload, ensure_ascii=False), "utf-8")
+    except Exception:
+        pass
+
     return index
 
 
@@ -318,12 +381,16 @@ def classify_event_risk(event: dict[str, Any], outcome: dict[str, Any] | None, g
     if outcome_name == "success" and used_suggested == 0 and extra_files == 0:
         reasons.append("logged_success_but_zero_usage")
 
-    backend_hits = sum(1 for path in top_files[:10] if path.startswith("main_service/"))
-    frontend_hits = sum(1 for path in top_files[:10] if path.startswith("main_ui/"))
-    if backend_hits >= 8 and frontend_hits == 0:
-        reasons.append("backend_heavy_top_files")
-    elif frontend_hits >= 8 and backend_hits == 0:
-        reasons.append("frontend_heavy_top_files")
+    # Detect single-root skew generically — flag if ≥8 of the top 10 results
+    # come from the same top-level source root (no hardcoded folder names).
+    if top_files:
+        from collections import Counter as _Counter
+        root_counts = _Counter(
+            p.split("/")[0] for p in top_files[:10] if "/" in p
+        )
+        dominant_root, dominant_count = root_counts.most_common(1)[0] if root_counts else ("", 0)
+        if dominant_count >= 8 and len(root_counts) == 1:
+            reasons.append(f"single_root_heavy_top_files:{dominant_root}")
 
     gap_log_timestamp = parse_time(gap_log.get("timestamp"))
     event_timestamp = parse_time(event.get("timestamp"))
@@ -359,7 +426,6 @@ def classify_event_risk(event: dict[str, Any], outcome: dict[str, Any] | None, g
         and dependency_hints >= 5
         and gap_fired == 0
         and outcome_name != "failed"
-        and "logged_success_but_zero_usage" not in reasons
     ):
         risk_state = "likely_good"
         action_label = "trust result"
@@ -550,9 +616,12 @@ def build_stats() -> dict[str, Any]:
             outcomes_by_event[eid] = inferred_outcomes[-1]
     all_outcomes = outcomes + inferred_outcomes
     last_gap_search = read_json(USAGE_DIR / "last_gap_search.json")
-    repo_file_index = build_repo_file_index()
     benchmark_meta_by_question = load_benchmark_metadata()
     audit_by_event, audit_by_question, audit_summary = load_audit_rows()
+    # Only scan the repo file tree when there is benchmark/audit data that needs it.
+    # Skips the expensive rglob on cold start when no benchmark has been run yet.
+    needs_repo_index = bool(benchmark_meta_by_question or audit_by_event or audit_by_question)
+    repo_file_index = build_repo_file_index() if needs_repo_index else {}
     latest_eval_path = USAGE_DIR / "latest_eval_summary.json"
     latest_eval = {}
     if latest_eval_path.exists():

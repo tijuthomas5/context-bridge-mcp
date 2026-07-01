@@ -99,6 +99,8 @@ Pass/fail reporting is meaningful only when the grading rules check for:
 - missing bridge/runtime files
 - wrong-domain drift
 
+The `needs_review` / `likely_good` split also depends partly on whether the calling AI reports real usage via `record_outcome`'s optional `used_suggested_files`/`extra_files_read` fields. This reporting is optional and left to the user/AI's discretion — if the user decides not to have the AI record this, CB evaluates the result using its own retrieval-quality signals instead.
+
 ## 10. Best-use recommendation
 
 ContextBridge is strongest as a repository retrieval and narrowing system for real engineering work.

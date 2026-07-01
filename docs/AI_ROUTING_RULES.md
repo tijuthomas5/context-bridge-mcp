@@ -74,3 +74,11 @@ Previously, every prompt went to CB by default — including conversational mess
 
 Now CB only fires when you deliberately tag a prompt with `>>SEARCH:`.
 This makes CB+Qwen a deliberate, high-signal tool rather than a default tax on every message.
+
+---
+
+## Reporting Outcomes (Optional)
+
+After completing a task that used `search_context_hybrid()`, you may call `record_outcome(event_id, outcome)`. Two additional fields are optional: `used_suggested_files` (how many of CB's suggested files you actually used) and `extra_files_read` (files you read beyond what CB suggested). Reporting these honestly sharpens CB's dashboard signal. It is entirely optional — if the user chooses not to have the AI report this, CB falls back to judging the result with its own retrieval-quality signals.
+
+**How to fill these in:** take the `top_files` list from CB's response for this `event_id`. Count how many of those exact paths you actually opened, read, or edited while completing the task — that is `used_suggested_files`. Count any other files you opened that were NOT in that list — that is `extra_files_read`. Base both counts only on files you genuinely touched this task, never guess or round up.

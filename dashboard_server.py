@@ -98,6 +98,54 @@ RAG_DEFAULTS = {
 }
 
 
+def get_available_profiles() -> list[dict]:
+    """Scan rules/projects/ for *_profile.py files and return name + path for each."""
+    import re
+    profiles_dir = PROJECT_ROOT / "context_bridge" / "rules" / "projects"
+    results = []
+    if not profiles_dir.exists():
+        return results
+    for f in sorted(profiles_dir.glob("*_profile.py")):
+        if f.name.startswith("example"):
+            continue
+        try:
+            text = f.read_text("utf-8")
+            m = re.search(r'^profile_name\s*=\s*["\']([^"\']+)["\']', text, re.MULTILINE)
+            name = m.group(1) if m else f.stem.replace("_profile", "")
+        except Exception:
+            name = f.stem.replace("_profile", "")
+        results.append({"name": name, "file": f.name})
+    return results
+
+
+def get_active_profile() -> str:
+    """Read project_profile from the active config file."""
+    config_name = (os.environ.get("CONTEXT_BRIDGE_CONFIG") or "config.hybrid.json").strip()
+    config_path = PROJECT_ROOT / "context_bridge" / config_name
+    try:
+        raw = json.loads(config_path.read_text("utf-8"))
+        settings = raw.get("settings", {})
+        runtime = settings.get("runtime", {}) if isinstance(settings, dict) else {}
+        return str(runtime.get("project_profile") or raw.get("project_profile") or "default")
+    except Exception:
+        return "default"
+
+
+def set_profile_in_all_configs(profile_name: str) -> None:
+    """Write project_profile into settings.runtime in all 3 config files."""
+    for file_path in CONFIG_FILES.values():
+        if not file_path.exists():
+            continue
+        try:
+            config = json.loads(file_path.read_text("utf-8"))
+            settings = config.setdefault("settings", {})
+            runtime = settings.setdefault("runtime", {})
+            runtime["project_profile"] = profile_name
+            file_path.write_text(json.dumps(config, indent=2, ensure_ascii=False), "utf-8")
+        except Exception:
+            pass
+
+
 def _run_apply_model(model: str) -> None:
     """Background: warm model in Ollama, stop CB, restart CB."""
     cb_port = int(os.environ.get("CONTEXT_BRIDGE_PORT", "8755"))
@@ -321,6 +369,8 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return self.send_stats()
         if path == "/api/config":
             return self.send_config()
+        if path == "/api/profiles":
+            return self.send_profiles()
         if path == "/api/prompt-config":
             return self.send_prompt_config()
         if path == "/api/qwen-input":
@@ -345,6 +395,8 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return self.reset_dashboard_data()
         if path == "/api/config":
             return self.save_config()
+        if path == "/api/set-profile":
+            return self.set_profile()
         if path == "/api/clear-analysis-cache":
             return self.clear_analysis_cache()
         if path == "/api/clear-rules-cache":
@@ -505,9 +557,39 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         except Exception as exc:
             self._send_json({"ok": False, "message": str(exc)}, status=500)
 
+    def send_profiles(self) -> None:
+        try:
+            profiles = get_available_profiles()
+            active = get_active_profile()
+            self._send_json({"profiles": profiles, "active": active})
+        except Exception as exc:
+            self._send_json({"error": str(exc)}, status=500)
+
+    def set_profile(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length))
+            profile_name = (body.get("profile") or "").strip()
+            if not profile_name:
+                self._send_json({"ok": False, "message": "No profile specified."}, status=400)
+                return
+            set_profile_in_all_configs(profile_name)
+            # Profile is process-level cached — CB restart required
+            with _apply_lock:
+                if _apply_state.get("status") in ("warming_up", "restarting"):
+                    self._send_json({"ok": True, "message": f"Profile saved. CB is already restarting."})
+                    return
+                _apply_state.update({"status": "starting", "message": "Starting…"})
+            reason = f"Profile switched to '{profile_name}' ✓"
+            threading.Thread(target=_run_restart_cb, args=(reason,), daemon=True).start()
+            self._send_json({"ok": True, "message": f"Profile set to '{profile_name}'. CB is restarting…"})
+        except Exception as exc:
+            self._send_json({"ok": False, "message": str(exc)}, status=500)
+
     def clear_analysis_cache(self) -> None:
         try:
             cleared = 0
+       
             try:
                 import diskcache
                 cache_dir = PROJECT_ROOT / "context_bridge" / "cache" / "analysis"

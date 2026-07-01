@@ -9,6 +9,9 @@ venv/
 archive/
 Questions/
 
+# Visual Studio IDE local cache/index — machine-specific, never publish.
+.vs/
+
 # Generated local index and runtime telemetry — all data/ files are machine-specific.
 data/
 usage/

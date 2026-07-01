@@ -61,6 +61,14 @@ ContextBridge has a built-in two-stage pipeline — retrieval and analysis. Both
 
 Full details: [PIPELINE_SETUP.md](./PIPELINE_SETUP.md)
 
+## How Outcome Logging Works
+
+Every `search_context_hybrid()` call writes one immutable record to `usage/events_*.jsonl` at query time — this includes CB's actual retrieved files, confidence, and symbol hits, and it is never changed afterward.
+
+If the AI later calls `record_outcome()`, that writes a separate record to `usage/outcomes_*.jsonl`, linked only by `event_id`. It does not overwrite or edit the original event.
+
+This means CB's own record of what it returned is always preserved as ground truth, separate from whatever the AI reports happened afterward. The dashboard shows both side by side, so a mismatch between them (e.g. AI reports success but CB's own confidence/symbol hits were weak) stays visible for review rather than being lost.
+
 ## Important: Who Controls The Mode?
 
 - the **server and config** control the real runtime mode

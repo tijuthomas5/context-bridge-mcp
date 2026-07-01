@@ -52,6 +52,10 @@ Tool names and descriptions are loaded automatically from the MCP server. Two ex
 
 `record_outcome(event_id, outcome)` — `outcome` must be one of: `"success"`, `"partial"`, `"failed"`. Optional `failure_reason`: `"none"`, `"bad_ranking"`, `"stale_graph"`, `"missing_graph_data"`, `"unclear_query"`, `"too_few_results"`, `"ai_did_not_use_context"`.
 
+`record_outcome` also accepts two optional numeric fields: `used_suggested_files` (how many of CB's suggested files you actually used) and `extra_files_read` (how many files you read beyond what CB suggested). If you can state these honestly, pass them — they make the dashboard's quality signal more accurate. This is entirely optional and up to you/the user; if the user decides not to have the AI record this, CB evaluates the result using its own retrieval-quality signals instead.
+
+**How to fill these in:** take the `top_files` list from CB's response for this `event_id`. Count how many of those exact paths you actually opened, read, or edited while completing the task — that number is `used_suggested_files`. Count any other files you opened that were NOT in that list — that number is `extra_files_read`. Base both counts only on files you genuinely touched this task, never guess or round up.
+
 ---
 
 ## Tool Sequence

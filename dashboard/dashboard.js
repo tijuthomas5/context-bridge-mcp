@@ -1366,6 +1366,7 @@ async function loadSettings(force = false) {
     updateRestartButtonVisibility("hybrid");
     updateRestartButtonVisibility("semantic");
     updateRestartButtonVisibility("keyword");
+    loadProfiles();
     return;
   }
   try {
@@ -1390,9 +1391,68 @@ async function loadSettings(force = false) {
     updateRestartButtonVisibility("hybrid");
     updateRestartButtonVisibility("semantic");
     updateRestartButtonVisibility("keyword");
+    loadProfiles();
   } catch (err) {
     setHtml("serverStatusCards", `<span class="save-msg error">Could not load settings: ${escapeHtml(err.message)}</span>`);
   }
+}
+
+// ─── Profile Switcher ─────────────────────────────────────────────────────────
+
+async function loadProfiles() {
+  try {
+    const base = window.location.protocol.startsWith("http") ? "" : "http://127.0.0.1:8795";
+    const res = await fetchWithTimeout(`${base}/api/profiles`, { cache: "no-store" }, 6000);
+    if (!res.ok) return;
+    const data = await res.json();
+    renderProfileSelector(data.profiles || [], data.active || "default");
+  } catch (_) {}
+}
+
+function renderProfileSelector(profiles, active) {
+  const el = byId("profileSelector");
+  if (!el) return;
+
+  if (!profiles.length) {
+    el.innerHTML = `<p style="color:var(--muted);font-size:13px;">No profiles found in <code>rules/projects/</code>. Run prompt 2 to generate one.</p>`;
+    return;
+  }
+
+  const isDefault = active === "default" || !active;
+  const options = [{ name: "default", label: "default (generic — no domain routing)" }]
+    .concat(profiles.map(p => ({ name: p.name, label: p.name })))
+    .map(p => `<option value="${escapeHtml(p.name)}" ${active === p.name || (isDefault && p.name === "default") ? "selected" : ""}>${escapeHtml(p.label || p.name)}</option>`)
+    .join("");
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <select id="profileDropdown" class="form-input" style="max-width:320px;">${options}</select>
+      <button id="profileApplyBtn" class="btn-primary" style="padding:6px 16px;">Apply &amp; Restart CB</button>
+      <span id="profileMsg" style="font-size:13px;color:var(--muted);"></span>
+    </div>
+    <p style="margin-top:8px;font-size:12px;color:var(--muted);">Changing the profile rewrites <code>project_profile</code> in all 3 config files and restarts CB — required because the profile is cached at startup.</p>
+  `;
+
+  byId("profileApplyBtn")?.addEventListener("click", async () => {
+    const selected = byId("profileDropdown")?.value;
+    if (!selected) return;
+    const msg = byId("profileMsg");
+    if (msg) msg.textContent = "Saving and restarting…";
+    try {
+      const base = window.location.protocol.startsWith("http") ? "" : "http://127.0.0.1:8795";
+      const res = await fetchWithTimeout(`${base}/api/set-profile`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile: selected }),
+      }, 10000);
+      const data = await res.json();
+      if (msg) msg.textContent = data.message || (data.ok ? "Done." : "Error.");
+      if (data.ok) showToast(`Profile set to '${selected}'. CB restarting…`, "success", 4000);
+      else showToast(data.message || "Failed.", "error");
+    } catch (err) {
+      if (msg) msg.textContent = `Error: ${err.message}`;
+    }
+  });
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
