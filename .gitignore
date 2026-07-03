@@ -39,8 +39,15 @@ rules/projects/*_rules.json
 # ─── DEVELOPER ARTIFACTS — not needed by downloaders, not published ──────
 # Runtime analysis cache (regenerated per machine; holds local project data).
 cache/
-# All test data and scripts are machine/project-specific — exclude the entire folder.
-tests/
+# All test data and scripts are machine/project-specific — excluded by default.
+# Use tests/* (not tests/) so specific files can be un-ignored below: a trailing-slash
+# directory pattern can't be selectively negated, since git never traverses into an
+# ignored directory to look for exceptions.
+tests/*
+# Permanent regression tests — these belong in version control, unlike the ad-hoc
+# benchmark/verification scripts also living under tests/.
+!tests/test_ranking_functions.py
+!tests/test_backfill_missing_code_blocks.py
 tests/test_graphify_pack_regressions.py
 tests/cb_partial_failed_questions.json
 tests/cb_partial_failed_questions_gauge.json

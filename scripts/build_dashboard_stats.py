@@ -429,6 +429,16 @@ def classify_event_risk(event: dict[str, Any], outcome: dict[str, Any] | None, g
     ):
         risk_state = "likely_good"
         action_label = "trust result"
+    elif (
+        outcome_name == "success"
+        and used_suggested >= 3
+        and primary_owner
+        and confidence >= 0.70
+        and gap_fired == 0
+    ):
+        risk_state = "likely_good"
+        action_label = "trust result"
+        reasons.append("ai_confirmed_usage")
     else:
         risk_state = "needs_review"
         action_label = "review owner files"
@@ -814,6 +824,7 @@ def build_stats() -> dict[str, Any]:
     risk_state_counts: Counter[str] = Counter()
     action_label_counts: Counter[str] = Counter()
     proof_state_counts: Counter[str] = Counter()
+    ai_flagged_count = 0
     for event in events:
         outcome = outcomes_by_event.get(event.get("event_id"))
         risk = classify_event_risk(event, outcome, last_gap_search)
@@ -824,11 +835,20 @@ def build_stats() -> dict[str, Any]:
         action_label_counts[risk["action_label"]] += 1
         if proof.get("proof_state"):
             proof_state_counts[str(proof["proof_state"])] += 1
+        # AI-flagged: the calling AI itself reported partial/failed with a real reason —
+        # tracked independently of risk_state so it never changes CB's own classification/counts,
+        # it's purely a second, honest lens for developers to find what an AI actually complained about.
+        outcome_value = (outcome or {}).get("outcome")
+        outcome_failure_reason = str((outcome or {}).get("failure_reason") or "").strip().lower()
+        ai_flagged = outcome_value in ("partial", "failed") and outcome_failure_reason not in ("", "none")
+        if ai_flagged:
+            ai_flagged_count += 1
         recent_events.append({
             **event,
             "outcome": (outcome or {}).get("outcome"),
             "failure_reason": (outcome or {}).get("failure_reason"),
             "outcome_notes": (outcome or {}).get("notes"),
+            "ai_flagged": ai_flagged,
             **risk,
             **proof,
         })
@@ -856,6 +876,7 @@ def build_stats() -> dict[str, Any]:
         "outcome_counts": dict(outcome_counts),
         "failure_reason_counts": dict(failure_counts),
         "risk_state_counts": dict(risk_state_counts),
+        "ai_flagged_count": ai_flagged_count,
         "action_label_counts": dict(action_label_counts),
         "proof_state_counts": dict(proof_state_counts),
         "success_rate_percent": percent(outcome_counts.get("success", 0) / len(all_outcomes)) if all_outcomes else 0.0,

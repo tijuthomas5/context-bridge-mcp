@@ -827,6 +827,17 @@ function renderOutcomeBars(stats) {
       ? `<div class="muted-text" style="margin-bottom:12px">No recorded outcome logs found in <code>context_bridge/usage/outcomes_*.jsonl</code>. Showing ${inferred} inferred outcome${inferred === 1 ? "" : "s"} from event heuristics.</div>`
       : `<div class="muted-text" style="margin-bottom:12px">Recorded outcomes: ${recorded}${inferred ? ` · inferred: ${inferred}` : ""}</div>`;
   const riskNote = `<div class="muted-text" style="margin:14px 0 12px">Derived retrieval risk is heuristic-only and helps flag searches that may need review.</div>`;
+  const aiFlaggedCount = Number(stats.ai_flagged_count || 0);
+  const aiFlaggedNote = `<div class="muted-text" style="margin:14px 0 4px">Separate from the risk buckets above — this counts cases where the calling AI itself reported <code>partial</code>/<code>failed</code> with a specific reason. It never changes the risk counts, it's just a second, independent signal for developers to review.</div>`;
+  const aiFlaggedBlock = `
+    <div style="font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px">AI-flagged for review</div>
+    ${aiFlaggedNote}
+    <div class="bar-row">
+      <div class="bar-label"><span class="bar-dot" style="background:var(--warning)"></span>AI flagged</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.round((aiFlaggedCount / riskTotal) * 100)}%;background:var(--warning)"></div></div>
+      <div style="font-size:12px;color:var(--text-2)">${aiFlaggedCount}</div>
+    </div>
+  `;
   setHtml("outcomeBars", `
     ${note}
     <div style="font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px">Logged outcomes</div>
@@ -834,6 +845,7 @@ function renderOutcomeBars(stats) {
     ${riskNote}
     <div style="font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px">Derived retrieval risk</div>
     ${riskRows}
+    <div style="margin-top:14px">${aiFlaggedBlock}</div>
   `);
 }
 
@@ -851,12 +863,14 @@ function renderEventFilters(stats) {
     keyword: (stats.recent_events || []).filter((e) => eventMode(e) === "keyword").length,
     hybrid_hash: (stats.recent_events || []).filter((e) => eventMode(e) === "hybrid_hash").length,
     hybrid_semantic: (stats.recent_events || []).filter((e) => eventMode(e) === "hybrid_semantic").length,
+    ai_flagged: (stats.recent_events || []).filter((e) => e.ai_flagged).length,
   };
   const filters = [
     ["all",             "All",        filteredCounts.all],
     ["keyword",         "Keyword",    filteredCounts.keyword],
     ["hybrid_hash",     "Hybrid RAG", filteredCounts.hybrid_hash],
     ["hybrid_semantic", "Semantic",   filteredCounts.hybrid_semantic],
+    ["ai_flagged",      "AI Flagged", filteredCounts.ai_flagged],
   ];
   setHtml("eventFilters", filters.map(([value, label, count]) =>
     `<button class="filter-btn ${currentModeFilter === value ? "active" : ""}" data-filter="${value}">
@@ -904,7 +918,8 @@ function renderReasonChips(reasons) {
 
 function renderRecentEvents(stats) {
   const events = (stats.recent_events || []).filter((e) =>
-    currentModeFilter === "all" || eventMode(e) === currentModeFilter
+    currentModeFilter === "all"
+    || (currentModeFilter === "ai_flagged" ? e.ai_flagged : eventMode(e) === currentModeFilter)
   );
   const pageData = paginateRows(events.slice().reverse(), recentEventsPage, RECENT_EVENTS_PAGE_SIZE);
   recentEventsPage = pageData.page;
@@ -915,7 +930,7 @@ function renderRecentEvents(stats) {
         <td>${escapeHtml(event.tool || "")}</td>
         <td class="query-cell">${escapeHtml(event.query || "")}</td>
         <td>${renderOutcomeBadge(event.outcome, event.failure_reason, event.outcome_notes)}</td>
-        <td>${renderRiskBadge(event.risk_state)}</td>
+        <td>${renderRiskBadge(event.risk_state)}${event.ai_flagged ? ` <span class="badge bad" title="AI itself reported partial/failed with a specific reason — independent of CB's own risk classification above." style="cursor:help">⚠ AI flagged</span>` : ""}</td>
         <td>${renderReasonChips(event.risk_reasons)}</td>
         <td>${escapeHtml(event.action_label || "—")}</td>
       <td>${escapeHtml(String(event.analysis_relevance_check ?? ""))}</td>

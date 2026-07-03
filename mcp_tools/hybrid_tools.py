@@ -12,7 +12,19 @@ from typing import Any
 from graphify_loader import load_config
 from mcp_tools.tools import clamp_int, clean_query, graph_hint_guardrails, tool_error, _get_stale_status
 from mcp_tools.usage import timed_call, log_tool_event
-from search import RANKING_PROFILE, search, select_primary_owner, extract_symbol_hits, extract_location_hints, is_low_value_symbol, tokenize
+from search import (
+    RANKING_PROFILE,
+    search,
+    select_primary_owner,
+    extract_symbol_hits,
+    extract_location_hints,
+    is_low_value_symbol,
+    tokenize,
+    pinned_owner_files,
+    query_dominant_modules,
+    gate_pins_by_domain,
+    enrich_symbol_hits,
+)
 from cb_profiles import load_profile
 
 from context_bridge.rag.hybrid_search import HybridSearchRequest, execute_hybrid_search
@@ -145,6 +157,13 @@ def search_context_hybrid(
         reverse=True,
     )
 
+    # Pin override: force domain-gated pinned owner files to the front, in pin order.
+    # See reorder_candidates_by_pins() docstring for the full rationale.
+    _pin_query_tokens = list(keyword_payload.get("query_terms", []))
+    _dominant_modules = query_dominant_modules(_pin_query_tokens)
+    _gated_pins = gate_pins_by_domain(pinned_owner_files(_pin_query_tokens), _dominant_modules)
+    fused_candidates_extended = reorder_candidates_by_pins(fused_candidates_extended, _gated_pins)
+
     fused_paths = {
         str(item.get("path") or "").replace("\\", "/").lower()
         for item in fused_candidates_extended
@@ -159,6 +178,7 @@ def search_context_hybrid(
     # Pull symbol hints for pack-injected files that the keyword search never ranked.
     # These files are in the candidate list but had no symbol hits because they weren't
     # in the keyword search results — extract them directly from the index.
+    _pack_norm_paths: set[str] = set()
     if _pack_injected:
         _pack_norm_paths = {p.replace("\\", "/").lower() for p in _pack_files if p.replace("\\", "/").lower() not in _existing_norm}
         filtered_symbol_hits = _inject_pack_symbol_hints(filtered_symbol_hits, _pack_norm_paths)
@@ -173,6 +193,15 @@ def search_context_hybrid(
     }
     if _top_unseen:
         filtered_symbol_hits = _inject_pack_symbol_hints(filtered_symbol_hits, _top_unseen)
+    # Current top-ranked window regardless of prior symbol-hit status. Used below for
+    # code_block backfill eligibility+eviction-priority -- a pin/pack-promoted file can
+    # already have symbol hits from the pre-fusion keyword pass (just none enriched with
+    # a code_block yet), so eligibility can't be limited to _top_unseen alone.
+    _top_paths = {
+        str(item.get("path") or "").replace("\\", "/").lower()
+        for item in fused_candidates_extended[:6]
+        if str(item.get("path") or "").strip()
+    }
     filtered_location_hints = [
         item
         for item in keyword_payload.get("location_hints", [])
@@ -196,6 +225,20 @@ def search_context_hybrid(
         for item in keyword_payload.get("code_blocks", [])
         if str(item.get("path") or "").replace("\\", "/").lower() in fused_paths
     ]
+
+    # Backfill code blocks for pin/pack-promoted files that got symbol hits injected
+    # above but still have no code_block (code_blocks was built from the pre-fusion
+    # keyword search and never knew about post-fusion pin promotion). See
+    # backfill_missing_code_blocks() docstring for the full rationale.
+    filtered_symbol_hits, filtered_code_blocks = backfill_missing_code_blocks(
+        filtered_symbol_hits,
+        filtered_code_blocks,
+        _top_paths | _pack_norm_paths,
+        PROJECT_ROOT(),
+        _load_runtime_config(_active_config_name()),
+        priority_paths=_top_paths | _pack_norm_paths,
+    )
+
     fused_order = {
         str(item.get("path") or "").replace("\\", "/").lower(): index
         for index, item in enumerate(fused_candidates_extended[:output_max_files])
@@ -941,6 +984,137 @@ def _run_pipeline(query: str, result: dict[str, Any]) -> dict[str, Any]:
         }
 
     return payload
+
+
+def reorder_candidates_by_pins(
+    candidates: list[dict[str, Any]],
+    gated_pins: list[str],
+) -> list[dict[str, Any]]:
+    """
+    Force domain-gated pinned owner files to the front of `candidates`, in pin
+    order, without adding any file that wasn't already present.
+
+    Fusion's rank-only RRF formula (keyword_weight / (60 + rank)) discards the
+    pin system's raw score advantage computed in aggregate_files/score_pinned_owner_file
+    (up to 100M+), so a pin can still lose to a stronger vector-side or lower-rank
+    keyword candidate after fusion runs. This restores pin dominance post-fusion by
+    re-ordering candidates fusion already retrieved -- it never adds a file fusion
+    didn't already surface, mirroring the existing pack-injection merge/re-sort
+    pattern used for _pack_injected rather than changing the fusion math itself.
+
+    Returns `candidates` unchanged (same list) if there are no gated pins, or none
+    of them are present in `candidates`.
+    """
+    if not gated_pins:
+        return candidates
+    by_path = {
+        str(item.get("path") or "").replace("\\", "/").lower(): item
+        for item in candidates
+        if item.get("path")
+    }
+    pin_front: list[dict[str, Any]] = []
+    seen_pin_paths: set[str] = set()
+    for pin_path in gated_pins:
+        norm_pin = pin_path.replace("\\", "/").lower()
+        if norm_pin in by_path and norm_pin not in seen_pin_paths:
+            pin_front.append(by_path[norm_pin])
+            seen_pin_paths.add(norm_pin)
+    if not pin_front:
+        return candidates
+    rest = [
+        item for item in candidates
+        if str(item.get("path") or "").replace("\\", "/").lower() not in seen_pin_paths
+    ]
+    return pin_front + rest
+
+
+def backfill_missing_code_blocks(
+    symbol_hits: list[dict[str, Any]],
+    code_blocks: list[dict[str, Any]],
+    injected_paths: set[str],
+    project_root: Path,
+    config: dict[str, Any],
+    enrich_fn=enrich_symbol_hits,
+    priority_paths: set[str] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """
+    Backfill code blocks for pin/pack-promoted files that got symbol hits injected
+    (via _inject_pack_symbol_hints) but still have no code_block, since code_blocks
+    is built from the pre-fusion keyword search and never knows about post-fusion
+    pin promotion. Without this, a pinned file can become files[0] while code_blocks
+    still only describes lower-ranked files from before promotion -- real-world RAG
+    practice generates snippets/highlights after final ranking, not from initial
+    retrieval alone. Reuses the exact same enrich_symbol_hits() the normal path uses
+    (injectable as enrich_fn for tests), so output shape is identical, and respects
+    the existing code_block_max_blocks budget instead of exceeding it.
+
+    `injected_paths` is the current top-ranked candidate window, not just files with
+    zero prior symbol hits -- a pin/pack-promoted file can already carry symbol hits
+    from the pre-fusion keyword pass that were simply never enriched with a code_block
+    (that pass's own budget picked other files first), so eligibility can't be limited
+    to "never seen before" files alone.
+
+    `priority_paths`, when given, enables eviction: if code_blocks is already at the
+    configured budget, blocks belonging to files OUTSIDE `priority_paths` (i.e. not
+    part of the current top-ranked window) are evicted -- lowest-priority (tail of the
+    pre-fusion order) first -- to make room, evicting no more than necessary and never
+    touching a block that belongs to a priority file. This mirrors
+    reserve_top_file_code_block_slots()'s "reserve budget for the top file" principle,
+    applied post-fusion instead of pre-fusion. When `priority_paths` is None (the
+    default), eviction is disabled and behavior is unchanged from before: a full budget
+    means no backfill happens.
+
+    Returns (possibly-updated symbol_hits, possibly-extended code_blocks).
+    """
+    if not injected_paths:
+        return symbol_hits, code_blocks
+    paths_with_code_block = {
+        str(item.get("path") or "").replace("\\", "/").lower()
+        for item in code_blocks
+    }
+    needs_enrichment = [
+        item for item in symbol_hits
+        if str(item.get("path") or "").replace("\\", "/").lower() in injected_paths
+        and str(item.get("path") or "").replace("\\", "/").lower() not in paths_with_code_block
+        and "code_block" not in item
+    ]
+    if not needs_enrichment:
+        return symbol_hits, code_blocks
+    configured_max_blocks = int(config.get("code_block_max_blocks", 6) or 6)
+    remaining_budget = max(0, configured_max_blocks - len(code_blocks))
+    working_code_blocks = code_blocks
+    if remaining_budget < len(needs_enrichment) and priority_paths is not None:
+        needed = len(needs_enrichment) - remaining_budget
+        evictable_indices = [
+            i for i, block in enumerate(code_blocks)
+            if str(block.get("path") or "").replace("\\", "/").lower() not in priority_paths
+        ]
+        if evictable_indices:
+            to_evict = (
+                set(evictable_indices[-needed:])
+                if needed <= len(evictable_indices)
+                else set(evictable_indices)
+            )
+            working_code_blocks = [b for i, b in enumerate(code_blocks) if i not in to_evict]
+            remaining_budget = max(0, configured_max_blocks - len(working_code_blocks))
+    if remaining_budget <= 0:
+        return symbol_hits, working_code_blocks
+    to_enrich = needs_enrichment[:remaining_budget]
+    enriched, new_code_blocks = enrich_fn(project_root, config, to_enrich, {})
+    if not new_code_blocks:
+        return symbol_hits, working_code_blocks
+    enriched_by_key = {
+        (str(e.get("label") or "").lower(), str(e.get("path") or "").replace("\\", "/").lower()): e
+        for e in enriched
+    }
+    updated_symbol_hits = [
+        enriched_by_key.get(
+            (str(h.get("label") or "").lower(), str(h.get("path") or "").replace("\\", "/").lower()),
+            h,
+        )
+        for h in symbol_hits
+    ]
+    return updated_symbol_hits, working_code_blocks + new_code_blocks
 
 
 def _inject_pack_symbol_hints(

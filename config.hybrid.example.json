@@ -92,8 +92,8 @@
     },
     "dependencies": {
       "enable_dependency_chain": true,
-      "dependency_edge_types": ["calls", "uses", "depends_on", "maps", "reads", "writes", "publishes", "subscribes"],
-      "max_dependency_hints_per_doc": 40
+      "dependency_edge_types": ["calls", "uses", "depends_on", "maps", "reads", "writes", "publishes", "subscribes", "imports", "imports_from", "references", "inherits"],
+      "max_dependency_hints_per_doc": 60
     },
     "search": {
       "file_candidate_documents": 200,

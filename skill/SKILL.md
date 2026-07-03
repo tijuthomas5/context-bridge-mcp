@@ -69,6 +69,7 @@ Tool names and descriptions are loaded automatically from the MCP server. Two ex
 
 ## Usage Rules
 
+- If you call `search_context_hybrid()`, don't just describe the problem in a sentence. Include the module/feature name, the concrete symptom, and any specific terms you already know (field names, status values, button labels) as keywords in the query. If the first result looks weak, run a second, narrower query with more specific terms instead of one long vague one.
 - Use only the files CB suggests — do not read entire source files
 - Do not call CB again unless the first result was clearly about the wrong module
 - Do not call `analyze_context()` manually — it runs automatically inside `search_context_hybrid()`

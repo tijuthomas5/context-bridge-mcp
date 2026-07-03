@@ -62,6 +62,10 @@ DEFAULT_DEPENDENCY_EDGE_TYPES = (
     "writes",
     "publishes",
     "subscribes",
+    "imports",
+    "imports_from",
+    "references",
+    "inherits",
 )
 
 
@@ -733,7 +737,7 @@ def collect_dependency_hints(
         return [], []
 
     allowed_relations = configured_dependency_edge_types(config)
-    max_edges = int(config.get("max_dependency_hints_per_doc", 40))
+    max_edges = int(config.get("max_dependency_hints_per_doc", 60))
     node_by_id, label_to_files = build_node_lookup(rel, nodes)
     hints: list[dict[str, Any]] = []
     related_files: list[str] = []
@@ -937,6 +941,7 @@ def load_graph_chunks(path: Path, project_root: Path, config: dict[str, Any]) ->
     nodes_by_file: dict[str, list[dict[str, Any]]] = {}
     labels_by_file: dict[str, set[str]] = {}
     label_to_file: dict[str, str] = {}
+    id_to_file: dict[str, str] = {}
     for node in nodes:
         source_file = canonicalize_source_file(rel, _node_source_file(node))
         label = _node_label(node)
@@ -946,12 +951,22 @@ def load_graph_chunks(path: Path, project_root: Path, config: dict[str, Any]) ->
         labels_by_file.setdefault(source_file, set()).add(label)
         if label:
             label_to_file[label] = source_file
+        node_id = str(node.get("id") or "").strip()
+        if node_id:
+            id_to_file[node_id] = source_file
 
+    # Graphify's graph.json follows the standard node-link format (NetworkX/D3.js):
+    # edges reference nodes by their "id" field, not by "label". Resolve by id first
+    # (the correct, standard lookup) and fall back to label only for edges that don't
+    # use id-shaped references.
     edges_by_file: dict[str, list[dict[str, Any]]] = {source_file: [] for source_file in nodes_by_file}
     for edge in links:
         source = str(edge.get("source") or edge.get("from") or "")
         target = str(edge.get("target") or edge.get("to") or "")
-        candidate_files = {label_to_file.get(source), label_to_file.get(target)}
+        candidate_files = {
+            id_to_file.get(source) or label_to_file.get(source),
+            id_to_file.get(target) or label_to_file.get(target),
+        }
         for source_file in candidate_files:
             if source_file:
                 edges_by_file.setdefault(source_file, []).append(edge)
@@ -978,9 +993,13 @@ def load_graph_chunks(path: Path, project_root: Path, config: dict[str, Any]) ->
 
         title = source_file.split("/")[-1]
         symbol_hints = collect_symbol_hints(rel, file_nodes, config, source_file_filter=source_file)
+        # Pass the full graph's node list (not just this file's own nodes) so that
+        # cross-file edge endpoints (e.g. an imported file's node) can still be
+        # resolved to their real source_file. file_edges stays scoped to just the
+        # edges touching this file.
         dependency_hints, related_files = collect_dependency_hints(
             rel,
-            file_nodes,
+            nodes,
             file_edges,
             config,
             source_file_filter=source_file,

@@ -105,6 +105,25 @@ Validation rules:
   omitted. Example patterns: `event images` + `linked order details`, `treatment master`
   + `staff availability`, `report guard` + `exception filter`.
 - Check whether ownership graphs exist near source areas.
+- Symbol-level completeness check: for a small sample of files already covered by a
+  graph.json (not the whole repo), count the top-level functions/const-functions/
+  arrow-functions/classes actually declared in the real source file and compare that
+  against the nodes graph.json has for that same file. Do this for at least one file
+  per pack you validate. A file can be inconsistent even when the pack/ownership
+  structure is otherwise correct -- some declarations get silently skipped while
+  others of the same shape are captured, with no error or warning. If a sampled file
+  shows a mismatch, flag the pack as "usable with gaps" rather than "fully usable,"
+  and note it as a candidate for a dedicated symbol-completeness pass (see prompt 1.4
+  in this same folder) rather than trying to fix every symbol here.
+- Also check whether the same file is referenced from more than one graph.json (a
+  pack-level graph and a module/ownership-level graph both covering it). If so, note
+  whether their node lists actually agree -- one copy having a symbol the other lacks
+  is the same kind of gap and should be flagged the same way.
+- CRITICAL -- single source of truth per file: this kind of copy-vs-copy disagreement
+  happens because each graph.json independently re-derives the same file's symbols
+  instead of sharing one derivation. When you additively fix a mismatch you find here,
+  apply the identical fix to every graph.json copy of that file in the same pass --
+  never fix just the one copy you happened to check first.
 - Check whether the data is useful for:
   - business/workflow routing
   - owner-file routing

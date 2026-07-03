@@ -39,6 +39,16 @@ What must be created:
 3. Folder-level ownership graphs near source areas where relevant:
    <source-area>/graphify-out/graph.json
 
+CRITICAL — single source of truth per file:
+A file that belongs to both a business/flow pack (item 2) and a folder-level ownership
+graph (item 3) will end up with a symbol-level node list in more than one graph.json.
+Derive that file's node list ONCE, then copy the same node/edge entries identically into
+every graph.json that references this file. Do not independently re-derive or re-walk the
+same file's symbols separately for each location -- doing so lets the copies drift apart
+over time (one copy captures a declaration the other misses, with no way to tell). If you
+update or add a node for a file in one graph.json, apply the identical update to every
+other graph.json that also references that file, in the same pass.
+
 What ContextBridge needs from Graphify:
 - business packs for workflow understanding
 - source-files.txt for exact file routing
@@ -90,6 +100,15 @@ First-pass prioritization rules:
   - workspace shell -> action panel -> workflow entry chains
 - Add folder-level ownership graphs for the main source areas first.
 - Do not attempt deep AST-level graphing for every file in V1.
+- Whatever symbol-level nodes you DO include for a file in graph.json, do not capture
+  them inconsistently -- do not record some of a file's top-level functions/const-
+  functions/arrow-functions/classes as nodes while silently skipping others of the same
+  shape. It is fine to keep V1 shallow (fewer files, fewer symbols), but within any file
+  you do choose to graph at the symbol level, be complete for that file rather than
+  partially and silently complete. A dedicated later pass (prompt 1.4 in this same
+  folder) exists specifically to close symbol-level gaps in files that turn out to need
+  deeper coverage -- V1 does not need to solve that, it only needs to avoid creating
+  silent, undetectable partial coverage.
 
 For every first-pass pack, also create a small behavior note that helps retrieval
 from real developer wording. Prefer an additive file such as:

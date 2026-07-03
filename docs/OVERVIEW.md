@@ -11,6 +11,42 @@ It supports:
 - Semantic RAG
 - `find_code_locations` for owner file, symbol, line hint, and dependency guidance
 
+## Intended Scope
+
+ContextBridge is a codebase routing and retrieval tool, not a reasoning engine. Setting
+this expectation clearly up front helps every user get accurate value from it.
+
+ContextBridge is designed to help with:
+
+- finding the right module
+- finding the right file area
+- surfacing likely owner files
+- surfacing useful symbols and line hints
+- providing first-pass related files
+- reducing manual repo search effort
+
+ContextBridge is not designed to:
+
+- understand a bug in full by itself
+- prove causality
+- choose the final fix
+- replace reading the actual source
+- replace engineering judgment across conditional branches
+
+Two practical limits follow directly from this:
+
+- **Retrieval quality depends on the underlying Graphify data.** ContextBridge routes
+  based on what Graphify has recorded. If Graphify's data is missing a file, a function,
+  or a connection between files, ContextBridge cannot surface what was never captured.
+- **A related file must have a real, recorded connection to be surfaced.** ContextBridge
+  can only report a relationship it has evidence for — an import, a call, a shared
+  dependency, and so on. It does not infer a connection that was never captured.
+
+In short: ContextBridge gets you to the right place with the right first-pass files,
+symbols, and connections — quickly, and with fewer wasted tokens. Understanding the code
+you land on, judging correctness, and choosing the fix remain the job of the reader or
+the AI acting on the result.
+
 ## What It Needs
 
 Before setup, make sure:
@@ -106,6 +142,7 @@ See [Quick_mcp_setup.md](./Quick_mcp_setup.md) for per-tool connection examples.
 - all modes use `search_context_hybrid()` — same tool name regardless of mode
 - local AI analysis runs automatically — no need to call `analyze_context` manually
 - prompt guides tool usage only; it does not switch the active runtime mode
+- **writing a good query:** name the feature area + the concrete symptom + any known terms, all as plain keywords — not a full sentence, just the nouns. Shape: `<module/feature> <specific action/symptom> <any known field/status/button name>`
 
 ## Read Next
 

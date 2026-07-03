@@ -4,6 +4,23 @@ All notable changes to ContextBridge MCP will be documented in this file.
 
 ---
 
+## [1.1.1-beta] - 2026-07-04
+
+### Fixed
+- **Cross-file dependency resolution** (`src/graphify_loader.py`): `load_graph_chunks()` was matching graph edges to owner files by node *label* instead of node *id* — the wrong field per the standard node-link graph JSON format edges actually use. This caused `edge_count: 0` and empty `dependency_hints`/`related_files` for files with real cross-file connections. Fixed by resolving both endpoints via `id_to_file` (falling back to `label_to_file`), and by passing the full node list (not just a single file's own nodes) into `collect_dependency_hints()` so cross-file targets can resolve. Verified against a real indexed graph: a previously-broken file's `edge_count` went from 0 to 232, with its true dependency correctly surfaced.
+- **Dependency-relation ranking gap** (`src/search.py`): `DEPENDENCY_RELATION_WEIGHT` had no entries for `inherits`/`imports_from`, so both silently fell back to the generic default (250.0) — scoring *below* generic relations like `contains` (300.0) and `defines` (280.0), even though an inheritance or import edge is a much stronger relevance signal. Added explicit weights (`inherits: 520.0`, `imports_from: 480.0`), matching their sibling relations `uses`/`imports`.
+- **Pin-promoted files missing code blocks** (`mcp_tools/hybrid_tools.py`): a file promoted to `files[0]` by the post-fusion pin/pack reorder could reach the AI with no code snippet, because `code_blocks` is built from the pre-fusion keyword pass and never knew about the promotion. Extracted the previously-inline pin-reorder logic into `reorder_candidates_by_pins()` and added a new `backfill_missing_code_blocks()` that reuses `enrich_symbol_hits()` to fill in the gap within the existing `code_block_max_blocks` budget.
+  - Follow-up fix (same area, found in a second review pass): the initial fix only covered files with *zero* prior symbol hits, and did nothing when the code-block budget was already full — both common cases in practice. Broadened eligibility to the full top-ranked window regardless of prior symbol-hit status, and added an opt-in `priority_paths` eviction path: when the budget is full, lower-priority blocks (outside the current top-ranked window) are evicted — no more than needed, and never a block that belongs to a priority file — to make room for the promoted file. Disabled by default (`priority_paths=None`) to keep any other caller's behavior unchanged.
+
+### Added
+- **Regression test coverage** for previously-untested ranking/backfill logic: `tests/test_ranking_functions.py` (`reserve_top_file_code_block_slots`, `extract_related_files` anchor-based dependency expansion, `reorder_candidates_by_pins`) and `tests/test_backfill_missing_code_blocks.py` (`backfill_missing_code_blocks`, including the eviction path). 15 tests total, all passing.
+- **CB query-phrasing guidance** — `skill/SKILL.md`'s "Usage Rules" (AI-facing: use concrete module/symptom/field keywords, not a full sentence; narrow the query on a weak first result) and `docs/OVERVIEW.md`'s "Prompt Guidance" section (user-facing, same shape: `<module/feature> <specific action/symptom> <any known field/status/button name>`).
+
+### Changed
+- **`.gitignore`**: `tests/` was a directory-anchor pattern, which blanket-ignores the whole folder and silently drops any file inside it from version control — including the new permanent regression tests above. Changed to `tests/*` (glob, not directory-anchor) with explicit `!tests/test_ranking_functions.py` / `!tests/test_backfill_missing_code_blocks.py` exceptions, so those two are tracked while ad-hoc/benchmark scripts in the same folder remain ignored.
+
+---
+
 ## [1.1.0-beta] - 2026-07-02
 
 ### Fixed

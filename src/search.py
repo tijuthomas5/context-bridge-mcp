@@ -163,9 +163,11 @@ SYMBOL_PRIMARY_OWNER_WEIGHT = {
 DEPENDENCY_RELATION_WEIGHT = {
     "calls": 600.0,
     "invokes": 600.0,
+    "inherits": 520.0,
     "uses": 520.0,
     "depends_on": 500.0,
     "imports": 480.0,
+    "imports_from": 480.0,
     "references": 450.0,
     "maps_to": 430.0,
     "returns": 420.0,
@@ -652,6 +654,41 @@ def collect_docs_for_paths(
     return exact
 
 
+def reserve_top_file_code_block_slots(
+    symbol_hits: list[dict[str, Any]],
+    ranked_files: list[dict[str, Any]],
+    reserve_count: int = 2,
+) -> list[dict[str, Any]]:
+    """Move up to `reserve_count` of the top-ranked file's own symbol_hits to the
+    front of the list, ahead of everything else, preserving their relative order
+    and the relative order of everything not reserved.
+
+    enrich_symbol_hits() consumes this list strictly in order and stops once
+    code_block_max_blocks is reached, globally across all files. Without this,
+    the #1 ranked file can be represented by only its single highest-scoring
+    symbol (or none) if a few other well-ranked files each contribute several
+    strong-scoring symbols first. This guarantees the top file gets a fair
+    minimum share of the existing budget -- it does not add any candidate that
+    wasn't already going to be considered, and does not change scores or ranks.
+    """
+    if not symbol_hits or not ranked_files or reserve_count <= 0:
+        return symbol_hits
+    top_path = str(ranked_files[0].get("path") or "").replace("\\", "/").lower()
+    if not top_path:
+        return symbol_hits
+    reserved: list[dict[str, Any]] = []
+    remainder: list[dict[str, Any]] = []
+    for item in symbol_hits:
+        item_path = str(item.get("path") or "").replace("\\", "/").lower()
+        if item_path == top_path and len(reserved) < reserve_count:
+            reserved.append(item)
+        else:
+            remainder.append(item)
+    if not reserved:
+        return symbol_hits
+    return reserved + remainder
+
+
 def enrich_symbol_hits(
     project_root: Path,
     config: dict[str, Any],
@@ -931,7 +968,12 @@ def score_document(doc: ContextDocument, query_tokens: list[str], query: str) ->
         "services": {"service", "services"},
         "controllers": {"controller", "controllers", "endpoint", "route"},
         "api": {"api", "client"},
-        "components": {"component", "components", "ui"},
+        # NOTE: "components"/"ui" intentionally removed — nearly every frontend file
+        # lives under a `components/` folder in this codebase, so matching that word
+        # was a near-universal, non-discriminating boost, not a real topical signal.
+        # It was inflating irrelevant generic UI files (modals/panels/forms) to the
+        # top of results whenever a query merely used the word "components" in its
+        # phrasing (e.g. "Which components participate in X?"), regardless of topic.
     }
     area_text = f"{area} {doc.path.lower()} {doc.title.lower()}"
     for layer, markers in layer_hits.items():
@@ -1726,12 +1768,22 @@ def extract_related_files(
     related_scores: dict[str, float] = defaultdict(float)
     seen_pairs: set[tuple[str, str]] = set()
 
-    def add_related(path_value: str, base_score: float, result_path: str) -> None:
+    def add_related(path_value: str, base_score: float, result_path: str, anchor_path: str | None = None) -> None:
         normalized = str(path_value or "").strip()
         if not normalized:
             return
         key = normalized.lower()
-        if preferred_paths and key not in preferred_paths:
+        # Allow this candidate in if it is itself already an independently-ranked file,
+        # OR it is directly connected (via this same hint) to a file that IS already
+        # ranked -- e.g. a dependency edge's other endpoint, or the ranked document that
+        # listed it as a related file. Requiring every expanded candidate to
+        # independently re-qualify defeats the point of graph expansion (surfacing files
+        # a keyword/vector search alone would miss); real multi-hop retrieval practice
+        # propagates relevance from an already-confirmed-relevant anchor to what it
+        # connects to, rather than re-scoring each candidate from scratch. Mirrors the
+        # source-or-target logic extract_dependency_chain() already uses safely.
+        anchor = str(anchor_path if anchor_path is not None else result_path or "").strip().lower()
+        if preferred_paths and key not in preferred_paths and anchor not in preferred_paths:
             return
         seen_key = (result_path.lower(), key)
         if seen_key in seen_pairs:
@@ -1759,8 +1811,14 @@ def extract_related_files(
         for dependency in metadata.get("dependency_hints") or []:
             if not isinstance(dependency, dict):
                 continue
-            add_related(str(dependency.get("source_file") or ""), 220.0, result_path)
-            add_related(str(dependency.get("target_file") or ""), 240.0, result_path)
+            dep_source = str(dependency.get("source_file") or "")
+            dep_target = str(dependency.get("target_file") or "")
+            # Anchor each side of the edge on the OTHER side, matching
+            # extract_dependency_chain()'s source-or-target gate: if either endpoint of
+            # this real edge is already a ranked file, the other endpoint is allowed in
+            # too, even if it was never independently keyword-ranked on its own.
+            add_related(dep_source, 220.0, result_path, anchor_path=dep_target)
+            add_related(dep_target, 240.0, result_path, anchor_path=dep_source)
     ranked = sorted(related_scores.items(), key=lambda item: item[1], reverse=True)
     output = [path for path, _ in ranked[:limit]]
     existing = {path.lower() for path in output}
@@ -1862,6 +1920,16 @@ def search(query: str, max_results: int | None = None, max_files: int | None = N
             int(item.get("line") or 0),
         )
     )
+    # Reserve a slice of the code_block budget for the top-ranked file specifically.
+    # enrich_symbol_hits() fills code blocks strictly in list order until
+    # code_block_max_blocks is hit, globally across every file combined. When several
+    # well-ranked files each contribute a few high-scoring symbols, they can collectively
+    # exhaust that budget before the #1 file's own secondary (non-top-priority) symbols
+    # -- e.g. an inner helper function -- ever get a turn, even though that file is the
+    # actual answer. This does not change scoring or file ranking; it only guarantees the
+    # top file's own top few candidates are placed within the existing budget instead of
+    # only its single highest-scoring symbol.
+    symbol_hits = reserve_top_file_code_block_slots(symbol_hits, ranked_files)
     symbol_hits, code_blocks = enrich_symbol_hits(project_root, config, symbol_hits, project_file_cache)
     location_hints = extract_location_hints(symbol_hits)
     dependency_chain = extract_dependency_chain(

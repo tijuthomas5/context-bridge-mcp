@@ -161,9 +161,13 @@
         "reads",
         "writes",
         "publishes",
-        "subscribes"
+        "subscribes",
+        "imports",
+        "imports_from",
+        "references",
+        "inherits"
       ],
-      "max_dependency_hints_per_doc": 40
+      "max_dependency_hints_per_doc": 60
     },
     "search": {
       "file_candidate_documents": 200,

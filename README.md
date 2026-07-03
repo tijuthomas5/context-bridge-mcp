@@ -15,6 +15,11 @@ With CB, the AI calls a single MCP tool and gets back a **compact, ranked result
 
 The optional local AI analysis stage further compresses the result before it reaches your cloud AI — so you pay even less.
 
+**Scope note:** ContextBridge is a codebase routing and retrieval tool, not a reasoning
+engine — it finds the right files, symbols, and connections, but does not prove causality
+or choose the fix for you. See [Intended Scope](docs/OVERVIEW.md#intended-scope) for the
+full boundary.
+
 ---
 
 > **💡 New here?** Don't want to read everything? Ask your AI assistant (Claude, ChatGPT, Gemini, etc.) to read the [`docs/`](docs/0.%20README.md) folder and guide you through setup for your OS and project.

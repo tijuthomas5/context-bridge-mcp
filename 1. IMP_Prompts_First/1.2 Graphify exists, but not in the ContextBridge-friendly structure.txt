@@ -42,6 +42,15 @@ What ContextBridge expects:
 3. Folder-level ownership graphs near source areas where relevant, such as:
    <source-area>/graphify-out/graph.json
 
+CRITICAL — single source of truth per file:
+A file that belongs to both a business/flow pack (item 2) and a folder-level ownership
+graph (item 3) ends up with a symbol-level node list in more than one graph.json. When
+you add or complete nodes for such a file, derive its node list ONCE and copy the same
+node/edge entries identically into every graph.json that references this file -- do not
+independently re-derive it per location. If you fix or add a node for a file in one
+graph.json, apply the identical fix to every other graph.json that also references that
+file, in the same pass, so the copies never drift apart from each other.
+
 Normalization rules:
 - Do not assume the existing Graphify structure is sufficient.
 - Inspect actual folders and files first.
@@ -88,6 +97,17 @@ Important constraints:
 - If existing Graphify data is structurally different but still useful, adapt around it instead of forcing a rewrite.
 - If ownership graphs are missing, create them.
 - If business packs are missing source-files.txt or raw/graph.json, add them.
+- While inspecting an existing raw/graph.json or ownership graph.json, sample at least
+  one covered file per pack: count the top-level functions/const-functions/arrow-functions/
+  classes actually declared in the real source file and compare against the nodes
+  graph.json has for that file. Files can be silently inconsistent -- some declarations
+  captured, others of the same shape skipped, with no error. Do not try to fix this
+  yourself here; note which files show a mismatch so a dedicated symbol-completeness
+  pass (prompt 1.4 in this same folder) can be run on them afterward.
+- If the same file is referenced from more than one graph.json (a pack-level graph and
+  a module/ownership-level graph both covering it), note whether their node lists agree.
+  A symbol present in one copy but missing from another is the same kind of gap and
+  should be listed the same way.
 - When creating or completing source-files.txt, include ALL layers of the stack:
     controller, service, entity/model, DTO, UI page/component.
   Service files are the most commonly omitted and the most important for CB routing.
@@ -132,6 +152,9 @@ Normalization decision rule:
 - If the miss is "file absent from pack", fix `raw/source-files.txt`.
 - If the miss is "owner present but not discoverable from real bug wording", fix behavior docs with additive retrieval hints.
 - If the miss is "cross-module path missing explicit runtime edge", add enrichment rather than replacing original graph outputs.
+- If the miss is "file is in the right pack/structure but graph.json is missing some of
+  its own declarations as nodes", do not try to fix it inline here -- flag the file and
+  run the dedicated symbol-completeness prompt (1.4 in this same folder) on it.
 
 Success criteria:
 - ContextBridge should be able to discover the normalized Graphify structure.

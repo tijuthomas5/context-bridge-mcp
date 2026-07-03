@@ -1,0 +1,72 @@
+Role: Graphify Symbol Completeness Scanner for ContextBridge
+
+Objective:
+Scan a folder or module of this repository and report which files have graph.json node
+data that is incomplete compared to what is actually declared in the real source file.
+This prompt does NOT fix anything -- it only finds and ranks gaps so that prompt 1.4
+(in this same folder) can be run afterward on the files that actually need it.
+
+Context:
+graph.json node capture can be silently inconsistent: some top-level declarations in a
+file get recorded as nodes, others of the same syntactic shape are skipped, with no
+error or warning anywhere. This has already been confirmed to happen in this project.
+Running the full fix (prompt 1.4) file-by-file with no prioritization is slow and
+wasteful. This prompt exists to produce a ranked list of which files are worth fixing
+first, based on evidence, not guessing.
+
+SCOPE TO SCAN: [fill in exact workspace-relative folder(s) for THIS project, e.g.
+  main_ui/src/modules/hms   or   main_service/Services   or the whole repo if it is
+  small enough to do in one pass]
+
+What you must do:
+1. Find every real source file inside the scope above (skip node_modules, bin, obj,
+   dist, build, .git, and any graphify-out/cache folders -- those are not source).
+2. For each source file, enumerate its top-level declarations the same way prompt 1.4
+   does: top-level function declarations, const-assigned (including async) arrow
+   functions regardless of signature length or destructuring, classes, and methods --
+   exported and non-exported alike.
+3. Find every graph.json anywhere in the repository that has at least one node whose
+   `source_file` matches this file. A single file is often referenced by more than one
+   graph.json (a pack-level graph and a module/ownership-level graph both covering it)
+   -- find all of them, not just the first one you encounter.
+4. Build the set of symbol labels already captured for this file, combined (union)
+   across every graph.json copy found in step 3. Normalize labels the same way before
+   comparing: strip a leading "." if present, strip a trailing "()" if present,
+   lowercase.
+5. Compare the declared set (step 2) against the captured set (step 4). The difference
+   is this file's missing count.
+6. Skip files with fewer than 5 total declarations -- too small to be worth ranking.
+7. Do not modify any file, any graph.json, or add/remove any node or edge. This is a
+   read-only report.
+
+Required output format (ranked table, highest missing count first):
+| Missing | Declared | Captured (all copies) | File | graph.json copies found |
+Then for the top of the list, also show:
+- A short sample of which declaration names appear missing (not the full list, just
+  enough to sanity-check the finding).
+
+After the table, report:
+1. Total files scanned
+2. Total files with at least one missing symbol
+3. Any files where you found more than one graph.json copy and the copies disagreed
+   with each other (one has a symbol the other lacks) -- call these out separately,
+   since they need prompt 1.4 run against every copy, not just one.
+4. Recommended order to run prompt 1.4 in (highest missing count first, but prioritize
+   files that are also pinned/primary-owner files for this project if you know which
+   those are).
+
+Important constraints:
+- This is a scan, not a fix. Do not create, edit, or delete any file.
+- Do not guess declaration counts from memory or from a summary -- read each file's
+  actual content.
+- Do not treat a single graph.json as authoritative if others exist for the same file --
+  always union across all copies before deciding something is "missing."
+- If the scope given is too large to read every file in one pass, say so explicitly
+  and process it in smaller batches rather than silently sampling a subset and
+  reporting it as complete.
+
+Success criteria:
+- Every source file in scope with 5+ declarations is accounted for in the report.
+- The ranked list reflects real declared-vs-captured counts, not estimates.
+- Files with disagreeing graph.json copies are flagged distinctly.
+- No file or graph.json was modified.
