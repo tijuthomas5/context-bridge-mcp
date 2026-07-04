@@ -646,6 +646,19 @@ def classify_symbol_kind(label: str, source_file: str) -> str | None:
     if normalized_label.endswith("Job") and "/jobs/" in path:
         return "job_class"
     if path.endswith(".tsx"):
+        # Type-only declarations that follow the standard React/TypeScript naming
+        # convention (interface FooProps {...}, interface FooState {...}) are not
+        # components -- but a capitalized label alone can't otherwise be told apart
+        # from a real component, since Graphify's own node data carries no
+        # declaration-kind field (verified: nodes only have label/source_file/
+        # source_location, no AST node type). Left unclassified, these were
+        # getting "ui_component" (near-top primary_owner priority weight) purely
+        # from being capitalized, letting a prop-type interface outrank the real
+        # decisive component/function for a query. Confirmed against the real
+        # index: 155 "Props"-suffixed and 21 "State"-suffixed labels across all
+        # packs, 100% of which are type-only declarations, none a real component.
+        if normalized_label.endswith("Props") or normalized_label.endswith("State"):
+            return "dto_type"
         return "ui_component" if normalized_label[:1].isupper() else "ui_function"
     if path.endswith((".ts", ".js", ".jsx")):
         return "ui_function"
@@ -739,8 +752,7 @@ def collect_dependency_hints(
     allowed_relations = configured_dependency_edge_types(config)
     max_edges = int(config.get("max_dependency_hints_per_doc", 60))
     node_by_id, label_to_files = build_node_lookup(rel, nodes)
-    hints: list[dict[str, Any]] = []
-    related_files: list[str] = []
+    all_hints: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str, str]] = set()
 
     for edge in links:
@@ -771,12 +783,7 @@ def collect_dependency_hints(
             continue
         seen.add(key)
 
-        if source_file:
-            related_files.append(source_file)
-        if target_file:
-            related_files.append(target_file)
-
-        hints.append(
+        all_hints.append(
             {
                 "relation": relation,
                 "source_label": str(source_node.get("label") or source_ref),
@@ -789,8 +796,53 @@ def collect_dependency_hints(
                 "target_line": target_node.get("line"),
             }
         )
-        if len(hints) >= max_edges:
-            break
+        # No early break here (unlike before) -- every qualifying edge is collected
+        # first, so the selection step below can prioritize distinct-file coverage
+        # instead of just keeping raw graph.json order.
+
+    if len(all_hints) <= max_edges:
+        hints = all_hints
+    elif not source_file_filter:
+        # Whole-graph callers (no single anchor file) have no well-defined "other
+        # file" to prioritize coverage against -- behavior here is unchanged from
+        # before: keep the first max_edges edges as encountered.
+        hints = all_hints[:max_edges]
+    else:
+        # A "hub" file (e.g. a shared API client) can have far more qualifying edges
+        # than max_edges while still only connecting to a handful of distinct files --
+        # most of the extra edges are repeated symbol-level detail (imports/calls to
+        # specific functions) touching the same few files. The previous truncation
+        # just kept the first max_edges edges in raw graph.json order, so a real,
+        # important file-level connection could be silently dropped purely because of
+        # where it happened to sit in that order (verified against a real hub file:
+        # 193 qualifying edges but only 8 distinct connected files -- one real
+        # connection was lost past the cap purely due to ordering). Fixed by keeping
+        # one edge per distinct connected file first -- guaranteeing full file
+        # coverage whenever distinct-file count is under max_edges (the common case)
+        # -- then filling any remaining budget with extra edges to files already
+        # covered, preserving original relative order throughout.
+        anchor = source_file_filter.lower()
+        covered_files: set[str] = set()
+        selected: list[dict[str, Any]] = []
+        deferred: list[dict[str, Any]] = []
+        for hint in all_hints:
+            other_file = hint["target_file"] if hint["source_file"].lower() == anchor else hint["source_file"]
+            other_key = other_file.lower()
+            if other_key and other_key not in covered_files:
+                covered_files.add(other_key)
+                selected.append(hint)
+            else:
+                deferred.append(hint)
+        if len(selected) < max_edges:
+            selected.extend(deferred[: max_edges - len(selected)])
+        hints = selected[:max_edges]
+
+    related_files: list[str] = []
+    for hint in hints:
+        if hint["source_file"]:
+            related_files.append(hint["source_file"])
+        if hint["target_file"]:
+            related_files.append(hint["target_file"])
 
     return hints, dedupe([value for value in related_files if value])
 
@@ -974,7 +1026,13 @@ def load_graph_chunks(path: Path, project_root: Path, config: dict[str, Any]) ->
     docs: list[ContextDocument] = []
     for source_file in sorted(nodes_by_file)[:max_chunks]:
         file_nodes = nodes_by_file[source_file][:max_nodes]
-        file_edges = edges_by_file.get(source_file, [])[:max_edges]
+        # Full, unsliced edge list for this file -- needed by collect_dependency_hints()
+        # below so its own coverage-first selection can see every real candidate edge
+        # before deciding what to keep. file_edges (sliced) stays exactly as before for
+        # the node/edge text rendering a few lines down, which is unrelated to
+        # dependency_hints correctness and shouldn't grow unbounded for hub files.
+        all_file_edges = edges_by_file.get(source_file, [])
+        file_edges = all_file_edges[:max_edges]
         node_lines = [
             f"NODE {_node_label(node)} {canonicalize_source_file(rel, _node_source_file(node))}"
             for node in file_nodes
@@ -1000,7 +1058,7 @@ def load_graph_chunks(path: Path, project_root: Path, config: dict[str, Any]) ->
         dependency_hints, related_files = collect_dependency_hints(
             rel,
             nodes,
-            file_edges,
+            all_file_edges,
             config,
             source_file_filter=source_file,
         )

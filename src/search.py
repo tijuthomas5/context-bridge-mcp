@@ -262,6 +262,28 @@ def query_identifier_tokens(query: str) -> list[str]:
     return identifiers
 
 
+def query_named_files(query: str) -> set[str]:
+    """Extract whole filename-like dotted identifiers directly named in the query
+    text (e.g. "admissionPolicy.ts", "admissionPolicy.types.ts"), lowercased.
+
+    Reuses QUERY_IDENTIFIER_RE -- the same regex query_identifier_tokens() already
+    matches these dotted strings with -- but query_identifier_tokens() immediately
+    SPLITS each one on '.' into separate word parts for keyword scoring and
+    discards the whole form. This keeps the whole filename intact so a ranked
+    file's own basename can be checked for an EXACT match, not just a substring
+    keyword overlap. Used by aggregate_files() to keep a file the query names
+    explicitly inside the default max_files window even when many
+    topically-similar files outscore it on generic keyword overlap alone.
+    """
+    named: set[str] = set()
+    for match in QUERY_IDENTIFIER_RE.finditer(query):
+        raw = match.group(0).strip()
+        if len(raw) < 3 or "." not in raw:
+            continue
+        named.add(raw.lower())
+    return named
+
+
 def expand_query_tokens(query: str, tokens: list[str]) -> list[str]:
     expanded = list(tokens)
     expanded.extend(_active_profile().expand_query_tokens(query, list(tokens)))
@@ -654,6 +676,38 @@ def collect_docs_for_paths(
     return exact
 
 
+def broadest_chunk_for_path(docs: list[ContextDocument], normalized_path: str) -> ContextDocument | None:
+    """Find the single most-complete chunk for a file that has multiple duplicate
+    pack-scoped chunks (one graph-chunk document per Graphify pack that references
+    it -- each pack's own extraction only captures the edges relevant to that
+    pack's own feature scope, so a shared/hub file can have several chunks, each
+    with a different, incomplete subset of its real dependency edges).
+
+    A query's own keyword-relevance scoring naturally favors whichever chunk is
+    topically closest to the query, which can starve out the one chunk that
+    actually holds a cross-feature connection -- even though the index itself is
+    correct. This looks across the FULL (unfiltered, unscored) document set for a
+    given file and returns its chunk with the highest edge_count, independent of
+    any query-relevance score, so it can be force-included alongside whatever
+    chunk already won on keyword matching. Mirrors the standard "parent-child"
+    hierarchical RAG pattern: always pair a narrow, topic-matched chunk with its
+    broader parent instead of letting the two compete in one ranking.
+    """
+    best: ContextDocument | None = None
+    best_edge_count = -1
+    for doc in docs:
+        if doc.kind != "graphify_graph_chunk":
+            continue
+        source_file = str((doc.metadata or {}).get("source_file") or "").replace("\\", "/").lower()
+        if source_file != normalized_path:
+            continue
+        edge_count = int((doc.metadata or {}).get("edge_count") or 0)
+        if edge_count > best_edge_count:
+            best_edge_count = edge_count
+            best = doc
+    return best
+
+
 def reserve_top_file_code_block_slots(
     symbol_hits: list[dict[str, Any]],
     ranked_files: list[dict[str, Any]],
@@ -1014,7 +1068,12 @@ def best_snippets(doc: ContextDocument, query_tokens: list[str], limit: int = 3)
 RANKING_PROFILE = "pack-first-owner-v4"
 
 
-def aggregate_files(results: list[dict[str, Any]], max_files: int, query_tokens: list[str]) -> list[dict[str, Any]]:
+def aggregate_files(
+    results: list[dict[str, Any]],
+    max_files: int,
+    query_tokens: list[str],
+    named_files: set[str] | None = None,
+) -> list[dict[str, Any]]:
     scores: dict[str, float] = defaultdict(float)
     sources: dict[str, set[str]] = defaultdict(set)
     query_intents_all: set[str] = set()
@@ -1059,6 +1118,17 @@ def aggregate_files(results: list[dict[str, Any]], max_files: int, query_tokens:
             if distinctive_hits:
                 score *= 1.0 + min(distinctive_hits, 5) * 0.55
                 score += distinctive_hits * 90.0
+            if named_files:
+                # The query names this exact filename outright (e.g. "admissionPolicy.ts").
+                # Mirrors how real-world code-search ranking (e.g. Sourcegraph's BM25F)
+                # applies a dedicated boost for filename/symbol matches, separate from
+                # generic keyword overlap -- an explicit "this is the file" signal should
+                # not have to out-compete dozens of topically-similar files on generic
+                # word overlap alone to survive the default max_files window.
+                basename = normalized.rsplit("/", 1)[-1]
+                if basename in named_files:
+                    score *= 3.0
+                    score += 1500.0
             if "ownership" in query_intents:
                 if any(layer in normalized for layer in (
                     "/entities/", "/dtos/", "/services/", "/controllers/", "/api/", "/components/", "/pages/",
@@ -1892,7 +1962,7 @@ def search(query: str, max_results: int | None = None, max_files: int | None = N
         result_payload(score, doc, reasons, include_private=True)
         for score, doc, reasons in file_top
     ]
-    ranked_files = aggregate_files(file_results, max_files, query_tokens)
+    ranked_files = aggregate_files(file_results, max_files, query_tokens, named_files=query_named_files(query))
     ranked_file_paths = {str(item.get("path") or "").lower() for item in ranked_files}
     exact_hint_results = [
         result_payload(score, doc, reasons, include_private=True)
@@ -1906,6 +1976,32 @@ def search(query: str, max_results: int | None = None, max_files: int | None = N
             continue
         seen_hint_keys.add(key)
         merged_hint_results.append(item)
+    # Guarantee completeness for a bounded set of the most relevant ranked files:
+    # always additionally include each one's single broadest chunk (by edge_count)
+    # across all of its duplicate pack-scoped chunks, not just whichever chunk
+    # happened to win the query's own keyword-relevance race. No-op for files that
+    # only have one chunk, or whose broadest chunk was already collected above.
+    # Bounded to the top 5 ranked files to keep cost/scope proportional to where it
+    # matters (the files results are actually built around) and avoid diluting the
+    # rest of the result set. See broadest_chunk_for_path() for the full rationale.
+    for item in ranked_files[:5]:
+        broaden_path = str(item.get("path") or "").replace("\\", "/").lower()
+        if not broaden_path:
+            continue
+        broadest_doc = broadest_chunk_for_path(docs, broaden_path)
+        if broadest_doc is None:
+            continue
+        broadest_key = str(broadest_doc.path or "")
+        if broadest_key in seen_hint_keys:
+            continue
+        for score, doc, reasons in scored:
+            if doc.id == broadest_doc.id:
+                broadest_payload = result_payload(score, doc, reasons, include_private=True)
+                break
+        else:
+            broadest_payload = result_payload(0.0, broadest_doc, ["broadest_chunk_for_completeness"], include_private=True)
+        seen_hint_keys.add(broadest_key)
+        merged_hint_results.append(broadest_payload)
     hint_results = file_results[: max(file_candidate_count, max_results)]
     ranked_file_order = {
         str(item.get("path") or "").lower(): index
