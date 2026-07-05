@@ -124,6 +124,26 @@ Validation rules:
   instead of sharing one derivation. When you additively fix a mismatch you find here,
   apply the identical fix to every graph.json copy of that file in the same pass --
   never fix just the one copy you happened to check first.
+- Cross-layer edge check: if a pack contains both frontend API-call files (e.g. UI
+  files that call an endpoint) and the matching backend controller/route files, do not
+  treat their co-presence in `raw/source-files.txt` as sufficient. Check whether
+  `graph.json` actually contains an edge between the UI call site and the backend
+  controller method (matched by route path + HTTP verb, not just naming similarity).
+  If both files exist in the pack but no such edge exists in the graph, flag it as a
+  missing cross-layer edge -- this is the same class of gap as a missing owner file,
+  just one layer higher (file present, connection absent). Do not fix it inline here;
+  note it as a candidate for an additive `enrichment/dependency-edges.enrichment.json`
+  fix, applied the same way normalization prompt 1.2 handles other enrichment gaps.
+  Walk the full chain, not just the nearest file: when the route+verb call is actually
+  made from an API-wrapper/client file rather than the page/component itself, do not
+  mark the pack "connected" just because the wrapper has a backend edge. Also confirm
+  an import edge connects the page component to that wrapper. Only if both links exist
+  (component -> wrapper -> backend) is the pack actually wired end to end. A wrapper
+  that is linked while its calling component has no import edge to it means the
+  component is still effectively isolated for primary-owner routing purposes, even
+  though the wrapper "passes" the check -- flag that case separately from a fully
+  missing edge, since the fix differs (add the component->wrapper import edge, not
+  another route+verb edge).
 - Check whether the data is useful for:
   - business/workflow routing
   - owner-file routing

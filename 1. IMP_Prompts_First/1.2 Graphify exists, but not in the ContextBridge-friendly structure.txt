@@ -64,6 +64,9 @@ Normalization rules:
   - missing folder-level ownership graphify-out folders
   - missing behavior/retrieval-hints.md when the right files already exist but
     the pack does not bind real bug-report wording to the true owners
+  - missing cross-layer edges when a UI call-site file and its matching backend
+    controller/route file both exist in the pack but graph.json has no edge
+    connecting them (see cross-layer edge rule below)
 
 Your tasks:
 1. Discover all Graphify-related folders in the repository.
@@ -118,6 +121,15 @@ Important constraints:
   A pack that contains only setup/config files but not the runtime consumer path is incomplete
   for ContextBridge debugging.
 - If cross-file dependency edges are weak, add enrichment files instead of editing original graph outputs first.
+- Cross-layer UI-to-backend edge check: when a pack (or a folder-level ownership graph)
+  contains both a frontend API-call file and the backend controller/route file it calls,
+  verify graph.json actually has an edge between them, matched by route path + HTTP verb
+  -- not just because both files happen to be listed in the same source-files.txt. Files
+  being co-located in a pack does not mean ContextBridge can traverse from one to the
+  other; only a real graph edge does. If the edge is missing, add it additively via
+  `enrichment/dependency-edges.enrichment.json` (relation such as `calls` or
+  `invokes_endpoint`) rather than editing the original graph.json. Apply this check to
+  every pack you normalize, not only ones where retrieval already looked weak.
 - If the right files are present but the pack still favors symptom files over owner files,
   add an additive retrieval-hints behavior file that explicitly maps:
   - real owner files
@@ -152,6 +164,7 @@ Normalization decision rule:
 - If the miss is "file absent from pack", fix `raw/source-files.txt`.
 - If the miss is "owner present but not discoverable from real bug wording", fix behavior docs with additive retrieval hints.
 - If the miss is "cross-module path missing explicit runtime edge", add enrichment rather than replacing original graph outputs.
+- If the miss is "UI call-site file and backend controller/route file both present in the pack but no edge connects them in graph.json", add the missing edge via enrichment rather than replacing original graph outputs.
 - If the miss is "file is in the right pack/structure but graph.json is missing some of
   its own declarations as nodes", do not try to fix it inline here -- flag the file and
   run the dedicated symbol-completeness prompt (1.4 in this same folder) on it.

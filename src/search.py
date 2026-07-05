@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import sys
@@ -1221,6 +1222,63 @@ def best_snippets(doc: ContextDocument, query_tokens: list[str], limit: int = 3)
 RANKING_PROFILE = "pack-first-owner-v4"
 
 
+def file_position_divisor(idx: int) -> float:
+    """Divisor applied to a document's score for the idx-th file in its own
+    "files" list, before any relevance-based scoring.
+
+    A file's position in that list is an artifact of how the document happened
+    to enumerate related files -- it is not itself a relevance signal, so a
+    flat linear divisor (idx + 1) over-punishes files that are real owners but
+    happen to be listed later (e.g. idx=9 -> a 10x reduction before any real
+    scoring even applies). This is the same "position bias" problem documented
+    in ranking/search literature (e.g. position-bias-corrected ranking, IPW
+    correction methods) -- the standard mitigation is to dampen rather than
+    remove the signal, so idx=0 (the common case) is completely unaffected and
+    only deeper positions are cushioned.
+
+    idx=0  -> 1.0   (unchanged from the original 1/(idx+1) behavior)
+    idx=1  -> 2.0   (unchanged)
+    idx=4  -> ~2.61  (was 5.0)
+    idx=9  -> ~3.30  (was 10.0)
+    idx=24 -> ~4.22  (was 25.0)
+    """
+    if idx <= 1:
+        return float(idx + 1)
+    return 1.0 + math.log1p(idx)
+
+
+def named_file_match_strength(basename: str, result_query_tokens: list[str]) -> float:
+    """How completely the query's own words cover this named file's distinctive
+    words, as a 0..1 fraction.
+
+    query_named_files() only checks whether the query literally mentions a
+    filename -- it does not distinguish an exact-subject match from a
+    same-family decoy the query also happens to name (e.g. a query about
+    "discharge readiness REPORT" that also lists a similarly-named but
+    different "discharge readiness PAGE" file as one of several keywords).
+    Real-world search/entity-resolution ranking treats these as different
+    match tiers -- exact match ranked strictly above partial match -- rather
+    than giving every named candidate an identical reward. This returns that
+    tier as a continuous fraction: 1.0 when every one of the file's own
+    distinctive words is echoed in the query, lower when some are missing.
+
+    Floored at 0.4 so an explicitly-named file never loses its boost entirely
+    (it was still asked for by name) -- only the DEGREE of the boost changes.
+    """
+    stem = basename.rsplit(".", 1)[0]
+    basename_tokens = {
+        token
+        for token in tokenize(stem.replace("_", " ").replace("-", " "))
+        if token not in _generic_file_tokens()
+    }
+    if not basename_tokens:
+        return 1.0
+    query_token_set = set(result_query_tokens)
+    covered = sum(1 for token in basename_tokens if token in query_token_set)
+    fraction = covered / len(basename_tokens)
+    return max(0.4, fraction)
+
+
 def aggregate_files(
     results: list[dict[str, Any]],
     max_files: int,
@@ -1255,7 +1313,7 @@ def aggregate_files(
                 continue
             if "→" in file_path or "->" in file_path or "`" in file_path:
                 continue
-            score = result_score / (idx + 1)
+            score = result_score / file_position_divisor(idx)
             normalized = file_path.replace("\\", "/").lower()
             path_tokens = tokenize(file_path.replace("\\", "/").replace("/", " "))
             path_token_set = set(path_tokens)
@@ -1280,8 +1338,16 @@ def aggregate_files(
                 # word overlap alone to survive the default max_files window.
                 basename = normalized.rsplit("/", 1)[-1]
                 if basename in named_files:
-                    score *= 3.0
-                    score += 1500.0
+                    # Use the ORIGINAL-case basename for match-strength tokenizing --
+                    # `basename` above is already lowercased (from `normalized`), which
+                    # destroys the camelCase boundaries tokenize() relies on to split
+                    # compound filenames (e.g. "NotificationsController.cs" would become
+                    # one unsplittable "notificationscontroller" token instead of
+                    # "notifications" + "controller", scoring a false near-zero match).
+                    original_basename = file_path.replace("\\", "/").rsplit("/", 1)[-1]
+                    strength = named_file_match_strength(original_basename, result_query_tokens)
+                    score *= 1.0 + 2.0 * strength
+                    score += 1500.0 * strength
             if "ownership" in query_intents:
                 if any(layer in normalized for layer in (
                     "/entities/", "/dtos/", "/services/", "/controllers/", "/api/", "/components/", "/pages/",
@@ -1887,6 +1953,46 @@ def owner_path_score(path: str) -> float:
     return 40.0
 
 
+def identifier_corroboration_strength(
+    identifier: str, query_tokens: list[str], all_identifiers: list[str]
+) -> float:
+    """How much of a named identifier's own distinctive words are corroborated
+    by the query's language OUTSIDE of the identifier list itself, as a 0..1
+    fraction.
+
+    A query can name several same-family candidates at once (e.g. listing a
+    real target alongside a similarly-spelled decoy as "keywords", with no cue
+    for which one is the actual subject). The flat exact-identifier bonus in
+    score_primary_owner_candidate() otherwise rewards every named candidate
+    equally, even one whose only word overlap with the query is the fact that
+    its own name got typed into the query text. This checks, per distinctive
+    word in the identifier, whether that word's TOTAL occurrence count in the
+    query exceeds how many times it appears merely embedded inside the full
+    set of named identifiers -- i.e. whether the query's own descriptive
+    language (not just the identifier list) independently uses that word. A
+    word that only shows up because it's baked into one candidate's own name
+    does not count as corroboration.
+
+    Floored at 0.4 so a named identifier never loses its bonus entirely --
+    only the DEGREE of the boost changes.
+    """
+    ident_words = {token for token in tokenize(identifier) if token not in _generic_file_tokens()}
+    if not ident_words:
+        return 1.0
+    identifier_word_counts: Counter[str] = Counter()
+    for other in all_identifiers:
+        identifier_word_counts.update(
+            token for token in tokenize(other) if token not in _generic_file_tokens()
+        )
+    query_word_counts = Counter(query_tokens)
+    corroborated = sum(
+        1 for word in ident_words
+        if query_word_counts.get(word, 0) > identifier_word_counts.get(word, 0)
+    )
+    fraction = corroborated / len(ident_words)
+    return max(0.4, fraction)
+
+
 def score_primary_owner_candidate(
     hit: dict[str, Any],
     ranked_file_order: dict[str, int],
@@ -1925,10 +2031,12 @@ def score_primary_owner_candidate(
             score += 160.0
     for identifier in query_identifiers or []:
         lowered = identifier.lower()
-        if lowered in normalized:
-            score += 900.0
-        elif lowered in label_lower:
-            score += 650.0
+        if lowered in normalized or lowered in label_lower:
+            strength = identifier_corroboration_strength(identifier, query_tokens, query_identifiers or [])
+            if lowered in normalized:
+                score += 900.0 * strength
+            else:
+                score += 650.0 * strength
     if kind in {"controller_action", "service_method", "job_method", "ui_component"} and identifier_hits:
         score += 180.0
     if "/helpers/" in normalized or normalized.endswith("helper.cs") or "statushelper" in normalized:

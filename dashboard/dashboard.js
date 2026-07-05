@@ -145,6 +145,30 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   }
 }
 
+// Lazily loads the pre-generated dashboard_stats.js snapshot, only as a
+// last-resort fallback when the live dashboard server is unreachable. Not
+// loaded via a <script> tag in index.html anymore -- that would parse this
+// (ever-growing) snapshot file on every single page load even though a live
+// fetch supersedes it in the normal case. Cached after first load/attempt so
+// repeated calls (e.g. the 30s auto-refresh) don't re-inject the script tag.
+let _dashboardStatsFallbackPromise = null;
+
+function loadDashboardStatsFallback() {
+  if (window.CONTEXT_BRIDGE_STATS) return Promise.resolve(window.CONTEXT_BRIDGE_STATS);
+  if (_dashboardStatsFallbackPromise) return _dashboardStatsFallbackPromise;
+  _dashboardStatsFallbackPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "../usage/dashboard_stats.js?v=20260624";
+    script.onload = () => {
+      if (window.CONTEXT_BRIDGE_STATS) resolve(window.CONTEXT_BRIDGE_STATS);
+      else reject(new Error("dashboard_stats.js loaded but did not set CONTEXT_BRIDGE_STATS"));
+    };
+    script.onerror = () => reject(new Error("dashboard_stats.js fallback failed to load"));
+    document.body.appendChild(script);
+  });
+  return _dashboardStatsFallbackPromise;
+}
+
 async function loadStats() {
   if (window.location.protocol.startsWith("http")) {
     try {
@@ -156,7 +180,9 @@ async function loadStats() {
     const res = await fetchWithTimeout("http://127.0.0.1:8795/api/stats", { cache: "no-store" }, 10000);
     if (res.ok) return res.json();
   } catch (_) { /* fall through */ }
-  if (window.CONTEXT_BRIDGE_STATS) return window.CONTEXT_BRIDGE_STATS;
+  try {
+    return await loadDashboardStatsFallback();
+  } catch (_) { /* fall through */ }
   throw new Error("Dashboard server not reachable. Run start_Context_Bridge.bat.");
 }
 

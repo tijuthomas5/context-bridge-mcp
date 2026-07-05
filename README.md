@@ -69,7 +69,10 @@ templates only if missing (never overwrites your edits), and rebuilds the index 
 Run `setup_context_bridge.bat --force` to reset configs back to the templates.
 
 The MCP server is SSE-based at `http://127.0.0.1:8755/sse`. Point your AI client there.
-Dashboard: `http://127.0.0.1:8795`.
+Dashboard: `http://127.0.0.1:8795`. Live stats can lag up to ~15 seconds behind the
+latest activity, and history lists (recent events, missed files, failed queries)
+show the most recent 1000 entries rather than the full lifetime log — both are
+intentional performance tradeoffs, not data loss.
 
 ---
 

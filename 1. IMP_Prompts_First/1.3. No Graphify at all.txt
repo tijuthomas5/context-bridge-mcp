@@ -77,6 +77,26 @@ also include the real runtime/bridge owner files where relevant:
   - downstream posting / allocation / ledger / billing owners
 Do NOT stop at setup/configuration files when the real bug path runs through runtime consumers.
 
+CRITICAL — cross-layer UI-to-backend edge rule:
+Listing a UI API-call file and its backend controller/route file in the same
+source-files.txt is not enough. When building graph.json for a pack that spans both
+layers, explicitly create an edge between the UI call site and the backend controller
+method it invokes, matched by route path + HTTP verb (not by naming similarity alone).
+A pack where the frontend and backend files are merely co-listed but have no connecting
+edge in graph.json is not fully wired -- ContextBridge cannot traverse from the UI file
+to its backend owner without that edge. If the match is ambiguous in V1, it is
+acceptable to skip the edge, but note it explicitly in the pack's output rather than
+silently omitting it.
+
+Wrapper vs. page component: if the file that actually makes the route+verb call is an
+API-wrapper/client file (not the page/component itself), first check whether an import
+edge already connects the page component to that wrapper. If it does, the route+verb
+edge only needs to land on the wrapper -- the component is already transitively
+reachable through the existing import edge, so do not duplicate the route+verb edge onto
+the component. If no import edge connects the component to the wrapper, derive that
+import edge as well, so the component-to-backend chain is actually complete and not just
+assumed.
+
 Your tasks:
 1. Inspect the repository structure.
 2. Identify source roots and major modules.

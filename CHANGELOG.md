@@ -4,6 +4,23 @@ All notable changes to ContextBridge MCP will be documented in this file.
 
 ---
 
+## [1.1.4-beta] - 2026-07-06
+
+### Fixed
+- Fix a ranking penalty that punished a file purely for its position in an unrelated list, unfairly crushing the score of a correct answer that happened to be listed later than a less relevant file.
+- Fix an explicitly-named file receiving the exact same reward as another explicitly-named but topically different file, letting a same-family decoy occasionally outrank the real target.
+- Fix a case-handling bug that broke word-splitting for compound file names, making some filenames score as if they shared no words with the query at all.
+
+### Changed
+- Cache a per-file measurement used for dashboard reporting so it isn't recomputed from disk on every dashboard refresh.
+- Reduce how often the dashboard's full stats rebuild can be triggered in quick succession.
+- Scope the dashboard's "always fetch fresh" response header to its live data endpoint only, so static dashboard assets can be cached normally.
+- Load the dashboard's fallback stats script only when needed, instead of unconditionally on every page load.
+- Cap several dashboard history lists to a bounded recent window so they stop growing indefinitely over time.
+
+### Added
+- Add a rule requiring the indexing step to explicitly connect a frontend API call to its matching backend endpoint (by matching the actual request path and method), instead of treating the two files simply being indexed together as sufficient.
+
 ## [1.1.3-beta] - 2026-07-04
 
 ### Fixed

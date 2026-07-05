@@ -1119,7 +1119,13 @@
 <!-- Toast container -->
 <div id="toastContainer"></div>
 
-<script src="../usage/dashboard_stats.js?v=20260624"></script>
+<!-- dashboard_stats.js (the pre-generated stats snapshot) is intentionally NOT
+     loaded here. It's only a last-resort fallback for when the live dashboard
+     server is unreachable, and dashboard.js now loads it lazily, on demand,
+     only if both live /api/stats attempts fail -- otherwise every page load
+     would parse this ever-growing snapshot file for nothing, since a fresh
+     live fetch supersedes it in the normal case. See loadDashboardStatsFallback()
+     in dashboard.js. -->
 <script src="dashboard.js?v=20260624"></script>
 </body>
 </html>

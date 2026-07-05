@@ -23,9 +23,17 @@ PYTHON_EXE   = sys.executable
 _apply_state: dict = {"status": "idle", "message": ""}
 _apply_lock  = threading.Lock()
 
-# Stats cache — rebuilt only when event/outcome files change.
+# Stats cache — rebuilt only when event/outcome files change, and throttled to
+# at most once per _STATS_MIN_REBUILD_INTERVAL_SECONDS even then. Without the
+# throttle, every single new CB search (which appends to events*.jsonl) changes
+# the fingerprint and forces a full rebuild on the very next dashboard load or
+# 30s auto-refresh — including build_stats()'s per-file disk reads. A request
+# that lands before the interval elapses just gets the last-known (slightly
+# stale) cache instead of forcing another expensive rebuild.
 _stats_cache: dict | None = None
 _stats_cache_fp: str = ""
+_stats_cache_built_at: float = 0.0
+_STATS_MIN_REBUILD_INTERVAL_SECONDS = 15.0
 
 
 def _stats_fingerprint() -> str:
@@ -352,10 +360,14 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(DASHBOARD_DIR), **kwargs)
 
-    def end_headers(self) -> None:
-        self.send_header("Cache-Control", "no-store")
-        super().end_headers()
-
+    # No end_headers() override here on purpose: static assets (dashboard.js,
+    # index.html, styles.css, dashboard_stats.js) go through SimpleHTTPRequestHandler's
+    # default do_GET()/end_headers(), which already sends Last-Modified and honors
+    # If-Modified-Since conditional requests -- letting the browser cache them
+    # normally between page loads/refreshes, matching the cache-busting `?v=`
+    # version strings already used in index.html. `Cache-Control: no-store` is
+    # applied ONLY to the JSON API responses instead (see _send_json() below),
+    # since those must always reflect live, current state.
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path == "/":
@@ -414,6 +426,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Access-Control-Allow-Origin", f"http://127.0.0.1:{PORT}")
             self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(payload)
         except (ConnectionAbortedError, BrokenPipeError, ConnectionResetError):
@@ -470,16 +483,23 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._send_json({"error": str(exc)}, status=500)
 
     def send_stats(self) -> None:
-        global _stats_cache, _stats_cache_fp
+        global _stats_cache, _stats_cache_fp, _stats_cache_built_at
         try:
             fp = _stats_fingerprint()
-            if _stats_cache is not None and fp == _stats_cache_fp:
+            now = time.time()
+            fp_unchanged = _stats_cache is not None and fp == _stats_cache_fp
+            too_soon = (
+                _stats_cache is not None
+                and (now - _stats_cache_built_at) < _STATS_MIN_REBUILD_INTERVAL_SECONDS
+            )
+            if fp_unchanged or too_soon:
                 self._send_json(_stats_cache)
                 return
             from context_bridge.scripts.build_dashboard_stats import build_stats
             result = build_stats()
             _stats_cache = result
             _stats_cache_fp = fp
+            _stats_cache_built_at = now
             self._send_json(result)
         except ImportError as exc:
             self._send_json({"error": f"Dashboard stats module not available: {exc}"}, status=503)

@@ -16,6 +16,17 @@ STATS_JS_PATH = USAGE_DIR / "dashboard_stats.js"
 BENCHMARK_PATH = PROJECT_ROOT / "context_bridge" / "tests" / "cb_real_world_benchmark_300.json"
 BENCHMARK_AUDIT_PATH = PROJECT_ROOT / "context_bridge" / "tests" / "cb_real_world_benchmark_300_audit.json"
 
+# path (relative, forward-slash) -> (mtime, char_count). See _file_chars() in
+# build_stats() for how this is used and invalidated.
+_FILE_CHARS_CACHE: dict[str, tuple[float, int]] = {}
+
+# How many of the most recent events to actually re-measure for the token-savings
+# sample (see build_stats()) and how many recent event/outcome rows to ship to the
+# dashboard (see RECENT_LIST_CAP below). Keeps per-rebuild cost and payload size
+# bounded as usage history grows, instead of scaling with all-time totals.
+_TOKEN_SAVINGS_SAMPLE_WINDOW = 500
+RECENT_LIST_CAP = 1000
+
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -722,12 +733,23 @@ def build_stats() -> dict[str, Any]:
     # as a token proxy is accurate for a RATIO because tokenizer bias cancels out.
     # Baseline = "reading the full files CB surfaced" (the conservative, fair baseline
     # from the literature — NOT the whole repo, which would inflate savings).
+    #
+    # Cached by (path, mtime) at module scope: many events reference the same file,
+    # and this module stays imported for the dashboard server's whole lifetime, so a
+    # file already measured once is never re-read from disk again unless it changes.
     def _file_chars(rel_path: Any) -> int:
         try:
-            p = PROJECT_ROOT / str(rel_path).replace("\\", "/")
+            key = str(rel_path).replace("\\", "/")
+            p = PROJECT_ROOT / key
             if not p.exists() or not p.is_file():
                 return 0
-            return len(p.read_text(encoding="utf-8", errors="ignore"))
+            mtime = p.stat().st_mtime
+            cached = _FILE_CHARS_CACHE.get(key)
+            if cached is not None and cached[0] == mtime:
+                return cached[1]
+            count = len(p.read_text(encoding="utf-8", errors="ignore"))
+            _FILE_CHARS_CACHE[key] = (mtime, count)
+            return count
         except Exception:
             return 0
 
@@ -735,7 +757,12 @@ def build_stats() -> dict[str, Any]:
     total_baseline_chars = 0
     measured_event_count = 0
     token_savings_rows: list[dict[str, Any]] = []
-    for event in events:
+    # Bounded to the most recent window (events is timestamp-sorted ascending):
+    # older events' savings are a stable, already-seen signal, and rechecking every
+    # single historical event on every rebuild grows disk I/O unboundedly as usage
+    # accumulates, even with per-file caching (the caching only helps *repeat*
+    # reads of the same file version, not the first pass over the full history).
+    for event in events[-_TOKEN_SAVINGS_SAMPLE_WINDOW:]:
         context_chars = event.get("context_chars")
         top = event.get("top_files") or []
         if context_chars is None or not top:
@@ -825,7 +852,13 @@ def build_stats() -> dict[str, Any]:
     action_label_counts: Counter[str] = Counter()
     proof_state_counts: Counter[str] = Counter()
     ai_flagged_count = 0
-    for event in events:
+    # Aggregate counts (risk_state_counts etc.) are computed over ALL events below,
+    # unaffected by the cap -- only the per-event `recent_events` rows shipped to
+    # the dashboard table are bounded to the most recent window (events is
+    # timestamp-sorted ascending), so the JSON payload doesn't grow unboundedly
+    # with all-time history. The frontend table is already named/used as "recent".
+    _recent_events_start = max(0, len(events) - RECENT_LIST_CAP)
+    for _event_index, event in enumerate(events):
         outcome = outcomes_by_event.get(event.get("event_id"))
         risk = classify_event_risk(event, outcome, last_gap_search)
         benchmark_meta = benchmark_meta_by_question.get(str(event.get("query") or ""))
@@ -843,15 +876,16 @@ def build_stats() -> dict[str, Any]:
         ai_flagged = outcome_value in ("partial", "failed") and outcome_failure_reason not in ("", "none")
         if ai_flagged:
             ai_flagged_count += 1
-        recent_events.append({
-            **event,
-            "outcome": (outcome or {}).get("outcome"),
-            "failure_reason": (outcome or {}).get("failure_reason"),
-            "outcome_notes": (outcome or {}).get("notes"),
-            "ai_flagged": ai_flagged,
-            **risk,
-            **proof,
-        })
+        if _event_index >= _recent_events_start:
+            recent_events.append({
+                **event,
+                "outcome": (outcome or {}).get("outcome"),
+                "failure_reason": (outcome or {}).get("failure_reason"),
+                "outcome_notes": (outcome or {}).get("notes"),
+                "ai_flagged": ai_flagged,
+                **risk,
+                **proof,
+            })
 
     stats = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -893,8 +927,12 @@ def build_stats() -> dict[str, Any]:
         "token_savings_method": "measured_char_ratio_vs_full_files",
         "token_savings_sample_size": measured_event_count,
         "token_savings_breakdown": token_savings_breakdown,
-        "missed_files": missed_files,
-        "failed_queries": failed_queries,
+        # Capped to the most recent window -- these already grow list-style with
+        # all-time history and are shipped in full to the dashboard on every load;
+        # bounding them keeps payload size (and JSON parse cost) from growing
+        # forever as usage accumulates. Aggregate counts elsewhere are unaffected.
+        "missed_files": missed_files[-RECENT_LIST_CAP:],
+        "failed_queries": failed_queries[-RECENT_LIST_CAP:],
         "low_confidence_searches": low_confidence,
         "latest_ranking_profile": next(
             (
@@ -915,8 +953,10 @@ def build_stats() -> dict[str, Any]:
         "index_health": build_index_health(),
         "pipeline_stats": build_pipeline_stats(),
         "recent_events": recent_events,
-        "recent_outcomes": all_outcomes,
-        "recent_code_location_events": [event for event in events if event.get("tool") == "find_code_locations"],
+        "recent_outcomes": all_outcomes[-RECENT_LIST_CAP:],
+        "recent_code_location_events": [
+            event for event in events if event.get("tool") == "find_code_locations"
+        ][-RECENT_LIST_CAP:],
     }
     return stats
 
