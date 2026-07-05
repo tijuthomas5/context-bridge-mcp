@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import linecache
 import os
 import re
 from pathlib import Path
@@ -622,7 +623,103 @@ def parse_source_location(value: Any) -> int | None:
     return None
 
 
-def classify_symbol_kind(label: str, source_file: str) -> str | None:
+_DECL_KEYWORDS = ("type", "interface", "class", "function", "const", "let", "var", "enum")
+
+
+def _decl_line_pattern(label: str) -> re.Pattern[str]:
+    """Build a pattern that matches a declaration line for THIS specific label
+    (ignoring leading `export`/`default` modifiers). Deliberately mirrors how
+    real code-intelligence tools (LSP servers, ctags, Sourcegraph SCIP) resolve
+    a symbol's true kind: they read it from the actual language grammar/
+    compiler, not from the symbol's name. TypeScript's `type`/`interface`
+    keywords are unambiguous -- a line declaring the label with either can
+    never be a real component or executable logic.
+
+    Requiring the label to immediately follow the keyword (not just "some
+    keyword exists on some nearby line") matters once the search window is
+    widened to tolerate line drift -- otherwise a wider window could attribute
+    a neighboring, unrelated symbol's declaration line to this label.
+    """
+    escaped = re.escape(label)
+    return re.compile(
+        rf"^\s*(?:export\s+)?(?:default\s+)?({'|'.join(_DECL_KEYWORDS)})\s+{escaped}\b"
+    )
+
+
+def _resolve_tsx_declaration_kind(
+    label: str,
+    source_file: str,
+    line: int | None,
+    project_root: Path | None,
+    line_verify_window: int = 12,
+) -> str | None:
+    """Resolve a capitalized .tsx label's real kind by reading its actual
+    declaration line from disk, instead of guessing from the label's name.
+
+    Verified against a real indexed codebase (620 capitalized .tsx labels
+    previously classified as "ui_component" by name alone): ~46% were actually
+    `type`/`interface` declarations, not real components, and most did not
+    follow any predictable name suffix -- so a name-based rule can't reliably
+    catch them. Conversely, a name-suffix rule can also produce false
+    positives the other way (e.g. "EmptyState", "LoadingState", "OrderState"
+    are real components despite ending in "State"). Reading the real
+    declaration keyword resolves both problems at once, deterministically,
+    the same way LSP/ctags/SCIP do it via a real parser -- just via a
+    lightweight regex on the actual source line instead of a full AST.
+
+    The reported graph line can drift from the real declaration line (seen in
+    practice: a 3-line drift caused a real miss). Rather than invent a new
+    tolerance, this reuses the same `line_verify_window` config value and
+    ascending-scan order already established and proven in
+    verify_symbol_line() (src/search.py) for this exact class of problem --
+    default 12 lines each direction. Matching on the label itself (not just
+    "any declaration keyword in range") keeps the wider window safe from
+    misattributing a neighboring symbol's declaration.
+
+    Uses `linecache` (stdlib) rather than reading/caching whole files: it reads
+    and keeps only the lines actually requested, with no manual full-file
+    memory retention, keeping this resource-cheap during index builds
+    regardless of codebase size. Returns None (caller must fall back) when the
+    file can't be read or no line is available, so unit tests and any file
+    that genuinely can't be found on disk keep working via the prior
+    name-based heuristic.
+    """
+    if not line or not project_root:
+        return None
+    try:
+        abs_path = (project_root / source_file).resolve()
+    except OSError:
+        return None
+    if not abs_path.exists():
+        return None
+    abs_path_str = str(abs_path)
+    pattern = _decl_line_pattern(label)
+    window = max(1, line_verify_window)
+    start = max(1, line - window)
+    end = line + window
+    for probe in range(start, end + 1):
+        text = linecache.getline(abs_path_str, probe)
+        if not text:
+            continue
+        match = pattern.match(text)
+        if not match:
+            continue
+        keyword = match.group(1)
+        if keyword in ("type", "interface", "enum"):
+            return "dto_type"
+        if keyword in ("class", "function", "const", "let", "var"):
+            return "ui_component" if label[:1].isupper() else "ui_function"
+    return None
+
+
+def classify_symbol_kind(
+    label: str,
+    source_file: str,
+    *,
+    line: int | None = None,
+    project_root: Path | None = None,
+    line_verify_window: int = 12,
+) -> str | None:
     normalized_label = label.strip()
     path = source_file.lower()
     if not normalized_label or not path:
@@ -646,18 +743,23 @@ def classify_symbol_kind(label: str, source_file: str) -> str | None:
     if normalized_label.endswith("Job") and "/jobs/" in path:
         return "job_class"
     if path.endswith(".tsx"):
-        # Type-only declarations that follow the standard React/TypeScript naming
-        # convention (interface FooProps {...}, interface FooState {...}) are not
-        # components -- but a capitalized label alone can't otherwise be told apart
-        # from a real component, since Graphify's own node data carries no
-        # declaration-kind field (verified: nodes only have label/source_file/
-        # source_location, no AST node type). Left unclassified, these were
-        # getting "ui_component" (near-top primary_owner priority weight) purely
-        # from being capitalized, letting a prop-type interface outrank the real
-        # decisive component/function for a query. Confirmed against the real
-        # index: 155 "Props"-suffixed and 21 "State"-suffixed labels across all
-        # packs, 100% of which are type-only declarations, none a real component.
-        if normalized_label.endswith("Props") or normalized_label.endswith("State"):
+        # "Props" is a reserved TypeScript/React naming convention: nothing else
+        # can legally be named FooProps, so this stays a safe, zero-I/O fast
+        # path (confirmed 100% type-only against the real index). "State" and
+        # every other capitalized label are NOT a reserved convention (real
+        # components can legitimately be named EmptyState/LoadingState/etc, and
+        # ~46% of all other capitalized labels turned out to be type/interface
+        # declarations with no predictable suffix) -- those go through the real
+        # declaration-line check instead of a name guess.
+        if normalized_label.endswith("Props"):
+            return "dto_type"
+        resolved = _resolve_tsx_declaration_kind(normalized_label, source_file, line, project_root, line_verify_window)
+        if resolved is not None:
+            return resolved
+        # Fallback when the real file/line can't be verified (unit tests with
+        # synthetic paths, or a file genuinely missing) -- keep prior behavior
+        # rather than regress to no classification at all.
+        if normalized_label.endswith("State"):
             return "dto_type"
         return "ui_component" if normalized_label[:1].isupper() else "ui_function"
     if path.endswith((".ts", ".js", ".jsx")):
@@ -676,12 +778,17 @@ def collect_symbol_hints(
     nodes: list[dict[str, Any]],
     config: dict[str, Any],
     source_file_filter: str | None = None,
+    project_root: Path | None = None,
 ) -> list[dict[str, Any]]:
     if not symbol_capture_enabled(config):
         return []
 
     allowed_kinds = configured_symbol_node_types(config)
     max_symbols = int(config.get("max_symbol_hints_per_doc", 40))
+    # Same config key already used by verify_symbol_line() (src/search.py) for
+    # this exact class of graph/source line-drift tolerance -- reused here
+    # rather than introducing a second, inconsistent tolerance value.
+    line_verify_window = int(config.get("line_verify_window", 12) or 12)
     hints: list[dict[str, Any]] = []
     seen: set[tuple[str, str, int | None]] = set()
 
@@ -692,10 +799,15 @@ def collect_symbol_hints(
             continue
         if source_file_filter and source_file != source_file_filter:
             continue
-        kind = classify_symbol_kind(label, source_file)
+        # Line must be resolved before classification so classify_symbol_kind()
+        # can verify capitalized .tsx labels against their real declaration
+        # line on disk (via project_root) instead of guessing from the name.
+        line = parse_source_location(node.get("source_location"))
+        kind = classify_symbol_kind(
+            label, source_file, line=line, project_root=project_root, line_verify_window=line_verify_window
+        )
         if not kind or kind not in allowed_kinds:
             continue
-        line = parse_source_location(node.get("source_location"))
         key = (label.lower(), source_file.lower(), line)
         if key in seen:
             continue
@@ -940,7 +1052,7 @@ def load_graph_document(path: Path, project_root: Path, config: dict[str, Any]) 
     text = "\n".join(node_lines + edge_lines)
     typed_nodes = [node for node in nodes if isinstance(node, dict)]
     typed_links = [edge for edge in links if isinstance(edge, dict)]
-    symbol_hints = collect_symbol_hints(rel, typed_nodes, config)
+    symbol_hints = collect_symbol_hints(rel, typed_nodes, config, project_root=project_root)
     dependency_hints, related_files = collect_dependency_hints(rel, typed_nodes, typed_links, config)
     return ContextDocument(
         id=stable_id(rel),
@@ -1050,7 +1162,7 @@ def load_graph_chunks(path: Path, project_root: Path, config: dict[str, Any]) ->
                 facts.append(f"{source} --{relation}--> {target}")
 
         title = source_file.split("/")[-1]
-        symbol_hints = collect_symbol_hints(rel, file_nodes, config, source_file_filter=source_file)
+        symbol_hints = collect_symbol_hints(rel, file_nodes, config, source_file_filter=source_file, project_root=project_root)
         # Pass the full graph's node list (not just this file's own nodes) so that
         # cross-file edge endpoints (e.g. an imported file's node) can still be
         # resolved to their real source_file. file_edges stays scoped to just the

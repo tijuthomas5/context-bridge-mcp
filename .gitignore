@@ -65,6 +65,9 @@ archive/manual-tests/
 *.tmp
 *.bak
 
+# Temporary — not yet stabilized, keep local-only for now.
+docs/AI_AGENT_GUIDE.md
+
 # Local/manual verification scripts for this workspace.
 test_code_deep.py
 test_code_loc.py

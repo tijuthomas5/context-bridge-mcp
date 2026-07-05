@@ -16,10 +16,15 @@ from search import (
     RANKING_PROFILE,
     search,
     select_primary_owner,
+    score_primary_owner_candidate,
+    rerank_top_primary_owner_candidates,
     extract_symbol_hits,
     extract_location_hints,
     is_low_value_symbol,
     tokenize,
+    primary_owner_query_identifiers,
+    strict_camel_identifiers,
+    filter_strict_camel,
     pinned_owner_files,
     query_dominant_modules,
     gate_pins_by_domain,
@@ -243,11 +248,83 @@ def search_context_hybrid(
         str(item.get("path") or "").replace("\\", "/").lower(): index
         for index, item in enumerate(fused_candidates_extended[:output_max_files])
     }
+    _primary_owner_pool = filtered_symbol_hits or keyword_payload.get("symbol_hits", [])
+    _primary_owner_query_tokens = tokenize(query)
+    _primary_owner_identifiers = primary_owner_query_identifiers(query)
     primary_owner = select_primary_owner(
-        filtered_symbol_hits or keyword_payload.get("symbol_hits", []),
+        _primary_owner_pool,
         fused_order,
-        tokenize(query),
+        _primary_owner_query_tokens,
         fused_paths,
+        _primary_owner_identifiers,
+    )
+    # Second-pass rerank (additive, does not modify select_primary_owner() or
+    # score_primary_owner_candidate()): re-examines only a small bounded window
+    # of the top-scored candidates and can override the pick above when a
+    # normalized, weighted comparison disagrees by a clear margin. See
+    # rerank_top_primary_owner_candidates() in src/search.py for the full
+    # rationale. rerank_top_primary_owner_candidates() expects its input
+    # pre-sorted by score_primary_owner_candidate() -- _primary_owner_pool
+    # itself is NOT guaranteed to be in that order (it's fusion-ordered, not
+    # primary-owner-scored), so it must be explicitly sorted here first;
+    # select_primary_owner() above does its own independent internal sort and
+    # never exposes it, so this sort cannot be skipped or reused from it.
+    _sorted_primary_owner_pool = sorted(
+        _primary_owner_pool,
+        key=lambda item: (
+            -score_primary_owner_candidate(
+                item, fused_order, _primary_owner_query_tokens, fused_paths, _primary_owner_identifiers
+            ),
+            int(item.get("line") or 0),
+        ),
+    )
+    # The rerank step needs identifiers that are BOTH strict (genuine CamelCase
+    # multi-word code identifiers, not bare acronyms or plain words) AND
+    # negation-filtered (not drawn from "X is not the owner" phrases).
+    #
+    # strict_camel_identifiers(query) is strict but NOT negation-filtered --
+    # it returns "GetFormActivitySummaryAsync" even when that identifier is
+    # explicitly negated in the query ("GetFormActivitySummaryAsync is not the
+    # owner"). Passing it to the reranker then gives that negated method an
+    # unearned identifier_match=1.0 signal, causing the reranker to promote
+    # the exact candidate the query is asking to exclude.
+    #
+    # _primary_owner_identifiers is negation-filtered but NOT strict -- it
+    # returns loose tokens like bare "HMS" that match almost every path in this
+    # codebase, making identifier_match a non-discriminating 1.0 for everything.
+    #
+    # filter_strict_camel(_primary_owner_identifiers) = BOTH: strict AND
+    # negation-filtered. For QUERY_2 this is [] (HMS/Need fail strictness),
+    # which is correct -- no strict positive identifier exists in the query.
+    _reranker_identifiers = filter_strict_camel(_primary_owner_identifiers)
+
+    # Also strip tokens contributed by NEGATED identifiers from the reranker's
+    # token list. Without this, "GetFormActivitySummaryAsync is not the owner"
+    # still floods query_tokens with "form", "activity", "summary", "async" --
+    # all of which appear in GetFormActivitySummaryAsync's label, giving it a
+    # high label_token_match even with identifier_match removed. Negated tokens
+    # are: tokenize(all strict identifiers) minus tokenize(non-negated identifiers).
+    _all_strict_tokens: set[str] = {
+        tok
+        for sid in strict_camel_identifiers(query)
+        for tok in tokenize(sid)
+    }
+    _non_negated_strict_tokens: set[str] = {
+        tok
+        for sid in _reranker_identifiers
+        for tok in tokenize(sid)
+    }
+    _negated_id_tokens = _all_strict_tokens - _non_negated_strict_tokens
+    _reranker_query_tokens = [
+        t for t in _primary_owner_query_tokens if t not in _negated_id_tokens
+    ]
+
+    primary_owner = rerank_top_primary_owner_candidates(
+        _sorted_primary_owner_pool,
+        primary_owner,
+        fused_order,
+        _reranker_query_tokens,
+        _reranker_identifiers,
     )
     return {
         "query": query,
@@ -1197,9 +1274,6 @@ def keyword_file_candidates(keyword_payload: dict[str, Any]) -> list[dict[str, o
 
 
 def infer_module_from_path(path: str) -> str | None:
-    """Map a file path to a module for hybrid fusion scoping. The folder→module
-    convention is project-specific, so it is supplied by the active profile;
-    core returns None (generic apps get no module labels)."""
     return _active_hybrid_profile().infer_module_from_path(path)
 
 

@@ -101,7 +101,28 @@ Pass/fail reporting is meaningful only when the grading rules check for:
 
 The `needs_review` / `likely_good` split also depends partly on whether the calling AI reports real usage via `record_outcome`'s optional `used_suggested_files`/`extra_files_read` fields. This reporting is optional and left to the user/AI's discretion — if the user decides not to have the AI record this, CB evaluates the result using its own retrieval-quality signals instead.
 
-## 10. Best-use recommendation
+## 10. Primary-owner selection on vague or negation-phrased queries
+
+Primary-owner selection can still pick the wrong file/symbol in two related
+cases:
+
+- **Vague or natural-language queries** that never name a concrete method or
+  file by its real identifier.
+- **Negation-phrased queries**, where the real answer is only paraphrased in
+  plain English (e.g. "medication overview" instead of the actual method
+  name) rather than named exactly — a second-pass rerank can see the right
+  candidate but its safety margin intentionally avoids overriding on a small
+  score gap, to prevent flip-flopping on other, genuinely close cases.
+
+Both are consistent with published findings that negation and vague/implicit
+phrasing remain a hard, unresolved problem across retrieval systems generally
+— not a gap unique to this tool. Both are tracked with intentionally-failing
+end-to-end tests in `tests/test_owner_file_known_limitations.py`; closing them
+reliably would need real semantic/synonym matching rather than further
+keyword-based scoring tuning (a hash-embedding vs. real-semantic-embedding
+comparison was tested directly and made no measurable difference on its own).
+
+## 11. Best-use recommendation
 
 ContextBridge is strongest as a repository retrieval and narrowing system for real engineering work.
 

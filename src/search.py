@@ -17,6 +17,13 @@ from cb_profiles import load_profile
 
 TOKEN_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
 QUERY_IDENTIFIER_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_.]{2,}\b")
+# A genuine internal CamelCase/PascalCase "hump" -- a lowercase letter immediately
+# followed by an uppercase one (e.g. "MedicationOverview" has "nO"). Used by
+# strict_camel_identifiers() (see below) to tell real multi-word code identifiers
+# apart from plain English words that are merely capitalized by sentence/title-case
+# position (e.g. "Overview", "Symptom"). Deliberately NOT used by
+# query_identifier_tokens() -- see the note in that function for why.
+_CAMEL_HUMP_RE = re.compile(r"[a-z][A-Z]")
 STOP_WORDS = {
     "the", "and", "for", "with", "from", "this", "that", "what", "where", "when", "how",
     "why", "can", "does", "into", "have", "has", "are", "was", "were", "will", "shall",
@@ -223,6 +230,44 @@ def tokenize(text: str) -> list[str]:
     return tokens
 
 
+# Negation cues checked around a matched identifier -- used ONLY for the
+# primary-owner exact-match bonus (see primary_owner_query_identifiers() below),
+# NOT for file-level relevance (query_identifier_tokens() itself stays
+# unfiltered). A query saying "X is not the owner" still means the FILE
+# containing X is almost always the right file to retrieve -- the user is
+# ruling X out from within the correct area, not saying X is irrelevant.
+# Filtering negation into query_identifier_tokens() directly was tried and
+# caused a real regression: it also stripped the file-level exact-identifier
+# boost (score_document()), dropping a correct file out of the top-25 window
+# entirely. Negation must only suppress "reward this SYMBOL as the decisive
+# answer", never "this file is relevant".
+#
+# If a negation cue sits close enough to plausibly negate the identifier
+# (either side: "not GetFoo" or "GetFoo is not the owner" -- real queries
+# phrase it both ways), that identifier is dropped from the primary-owner
+# candidate list. Mirrors the "selected proximity" negation-exclusion approach
+# used in real-world search/IR systems (e.g. Amazon product search's
+# negation-aware filtering, negation detection in clinical-text retrieval):
+# exclude a term's positive-match credit when a negation cue is nearby, rather
+# than attempt full syntactic negation-scope parsing.
+_NEGATION_CUE_RE = re.compile(
+    r"\b(?:not|never|without|except|excluding|neither|nor)\b|n't\b|\brather than\b|\binstead of\b|\bno longer\b",
+    re.IGNORECASE,
+)
+# Character window checked on each side of the identifier match. This is a proximity
+# heuristic, not exact word-count precision or full negation-scope parsing -- it can
+# occasionally skip a legitimate identifier whose nearby "not" negates something else
+# in the sentence. That's an accepted, bounded trade-off: the identifier still
+# competes normally on every other scoring signal: it only loses this one extra bonus.
+_NEGATION_WINDOW_CHARS = 40
+
+
+def _is_negated_nearby(query: str, start: int, end: int) -> bool:
+    window_start = max(0, start - _NEGATION_WINDOW_CHARS)
+    window_end = min(len(query), end + _NEGATION_WINDOW_CHARS)
+    return bool(_NEGATION_CUE_RE.search(query[window_start:window_end]))
+
+
 def query_identifier_tokens(query: str) -> list[str]:
     identifiers: list[str] = []
     seen: set[str] = set()
@@ -248,11 +293,24 @@ def query_identifier_tokens(query: str) -> list[str]:
         # Plain lowercase words like "evaluation", "controller", "settlement" are NOT
         # code identifiers and must be skipped — otherwise they become exact_identifier_tokens
         # that suppress all semantic vectors whose text doesn't contain that exact word.
+        #
+        # NOTE: this stays deliberately loose (`not raw.islower()` accepts ANY
+        # initial-capital word, not just real multi-hump CamelCase). Several existing
+        # callers rely on that looseness -- e.g. score_primary_owner_candidate()'s
+        # label-substring bonus depends on words like "Medication"/"Overview" being
+        # extracted here so a candidate whose own name contains those query words gets
+        # rewarded (see tests/debug_evt_20_hybrid_primary_owner.py). A prior attempt to
+        # tighten this in place (requiring an internal lowercase->uppercase transition)
+        # broke that case even though it fixed the flooding regression it targeted
+        # (see tests/debug_evt_20_regression.py) -- so per the Parallel-Change/
+        # expand-contract pattern, the stricter check now lives in the separate,
+        # additive `strict_camel_identifiers()` function below instead of here. Do NOT
+        # tighten this function directly again without re-verifying both debug scripts.
         _is_code_identifier = (
-            not raw.islower()                         # CamelCase: "HmsLedgerController"
-            or "_" in raw                             # snake_case: "hms_ledger_service"
-            or any(c.isdigit() for c in raw)          # versioned: "posV2", "v2"
-            or (raw.islower() and len(raw) >= 15)     # long compound: "hmsledgerservice"
+            not raw.islower()
+            or "_" in raw
+            or any(c.isdigit() for c in raw)
+            or (raw.islower() and len(raw) >= 15)
         )
         if not _is_code_identifier:
             continue
@@ -260,6 +318,88 @@ def query_identifier_tokens(query: str) -> list[str]:
             seen.add(lowered)
             identifiers.append(raw)
     return identifiers
+
+
+def strict_camel_identifiers(query: str) -> list[str]:
+    """A stricter, SEPARATE view of query identifiers: only tokens that look like a
+    genuine multi-word code identifier -- CamelCase/PascalCase with a real internal
+    "hump" (a lowercase-to-uppercase transition, e.g. "HmsFormsService" has "sF"),
+    snake_case, a token containing a digit, or a long lowercase compound (>=15 chars).
+
+    This intentionally does NOT modify or replace query_identifier_tokens(), which
+    stays loose on purpose because other callers rely on that looseness (see the note
+    in query_identifier_tokens()). This is an additive, expand-only function (Parallel
+    Change / expand-contract pattern) for consumers that need real confidence a token
+    is an actual code identifier -- e.g. a future "confirm this whole file is relevant"
+    trigger -- where a plain capitalized English word like "Overview" or "Symptom"
+    must NOT count, to avoid the false-positive flooding regression documented in
+    tests/debug_evt_20_regression.py.
+
+    Built on top of query_identifier_tokens()'s already-deduped, already-tokenized
+    output rather than re-parsing the query, so both functions always agree on what
+    counts as a "token" in the first place -- only the strictness of the final filter
+    differs.
+    """
+    strict: list[str] = []
+    for identifier in query_identifier_tokens(query):
+        if "_" in identifier:
+            strict.append(identifier)
+        elif any(c.isdigit() for c in identifier):
+            strict.append(identifier)
+        elif identifier.islower() and len(identifier) >= 15:
+            strict.append(identifier)
+        elif _CAMEL_HUMP_RE.search(identifier):
+            strict.append(identifier)
+    return strict
+
+
+def filter_strict_camel(identifiers: list[str]) -> list[str]:
+    """Apply the same strictness test as strict_camel_identifiers() to an
+    already-extracted list of identifiers (e.g. one that has already been
+    negation-filtered by primary_owner_query_identifiers()). Used when you
+    want both negation-filtering AND strictness, but the two filters live in
+    separate functions (strict_camel_identifiers works on the raw query text;
+    primary_owner_query_identifiers applies negation suppression). Neither
+    function calls the other, so this is the correct composition point."""
+    return [
+        identifier for identifier in identifiers
+        if (
+            "_" in identifier
+            or any(c.isdigit() for c in identifier)
+            or (identifier.islower() and len(identifier) >= 15)
+            or _CAMEL_HUMP_RE.search(identifier)
+        )
+    ]
+
+
+def primary_owner_query_identifiers(query: str) -> list[str]:
+    """Identifiers eligible for the primary-owner exact-match bonus
+    (score_primary_owner_candidate()) ONLY -- a negation-filtered view built on
+    top of query_identifier_tokens(), which itself stays unfiltered for
+    file-level relevance (score_document()). See the _NEGATION_CUE_RE comment
+    above for why this must be a separate function rather than a change to
+    query_identifier_tokens() itself.
+
+    Re-finds each identifier's position in the raw query text (via
+    QUERY_IDENTIFIER_RE, the same regex query_identifier_tokens() uses) so the
+    negation-proximity check has real character offsets to work with --
+    query_identifier_tokens() itself only returns strings, not positions.
+    """
+    identifiers = query_identifier_tokens(query)
+    if not identifiers:
+        return identifiers
+    negated: set[str] = set()
+    for match in QUERY_IDENTIFIER_RE.finditer(query):
+        if _is_negated_nearby(query, match.start(), match.end()):
+            raw = match.group(0).strip()
+            negated.add(raw.lower())
+            if "." in raw:
+                for part in raw.split("."):
+                    if part:
+                        negated.add(part.lower())
+    if not negated:
+        return identifiers
+    return [identifier for identifier in identifiers if identifier.lower() not in negated]
 
 
 def query_named_files(query: str) -> set[str]:
@@ -687,23 +827,36 @@ def broadest_chunk_for_path(docs: list[ContextDocument], normalized_path: str) -
     topically closest to the query, which can starve out the one chunk that
     actually holds a cross-feature connection -- even though the index itself is
     correct. This looks across the FULL (unfiltered, unscored) document set for a
-    given file and returns its chunk with the highest edge_count, independent of
-    any query-relevance score, so it can be force-included alongside whatever
-    chunk already won on keyword matching. Mirrors the standard "parent-child"
+    given file and returns its most useful chunk, independent of any
+    query-relevance score, so it can be force-included alongside whatever chunk
+    already won on keyword matching. Mirrors the standard "parent-child"
     hierarchical RAG pattern: always pair a narrow, topic-matched chunk with its
     broader parent instead of letting the two compete in one ranking.
+
+    Selection key is `dependency_hint_count` (the filtered, curated set of real
+    cross-file relationships -- see collect_dependency_hints()), not raw
+    `edge_count`. Raw edge_count includes every edge touching the file
+    (self-edges, same-file edges, and edges to relation types excluded from
+    dependency_hints), so a chunk with many raw-but-noisy edges could otherwise
+    beat a chunk with fewer raw edges but more actually-useful cross-file
+    dependencies -- the opposite of what "most complete" should mean here.
+    edge_count is kept only as a tiebreaker between chunks with equal
+    dependency_hint_count.
     """
     best: ContextDocument | None = None
-    best_edge_count = -1
+    best_key = (-1, -1)
     for doc in docs:
         if doc.kind != "graphify_graph_chunk":
             continue
         source_file = str((doc.metadata or {}).get("source_file") or "").replace("\\", "/").lower()
         if source_file != normalized_path:
             continue
-        edge_count = int((doc.metadata or {}).get("edge_count") or 0)
-        if edge_count > best_edge_count:
-            best_edge_count = edge_count
+        metadata = doc.metadata or {}
+        dependency_hint_count = int(metadata.get("dependency_hint_count") or 0)
+        edge_count = int(metadata.get("edge_count") or 0)
+        key = (dependency_hint_count, edge_count)
+        if key > best_key:
+            best_key = key
             best = doc
     return best
 
@@ -1546,21 +1699,71 @@ def _symbol_query_relevance(label: str, query_distinctive: set[str]) -> int:
     return sum(1 for token in query_distinctive if token in label_tokens)
 
 
+def _normalize_symbol_label(label: str) -> str:
+    """Strip the method-call wrapper (".Foo()" -> "foo") so a symbol label can
+    be compared directly against a bare query identifier like "Foo"."""
+    normalized = label.strip()
+    if normalized.startswith("."):
+        normalized = normalized[1:]
+    if normalized.endswith("()"):
+        normalized = normalized[:-2]
+    return normalized.lower()
+
+
+# Widened per-file candidate cap used ONLY when a STRICT identifier (real
+# CamelCase/PascalCase hump, snake_case, digit, or long compound -- see
+# strict_camel_identifiers()) confirms a file is genuinely relevant. Deliberately
+# modest (not the unbounded/40-cap version tried and reverted earlier) and never
+# bypasses this function's own overall `limit` truncation below -- it only lets
+# a confirmed file's OTHER (unnamed sibling) symbols compete for a slot instead
+# of being cut off at the default per_path_limit.
+_CONFIRMED_FILE_SYMBOL_CAP = 16
+
+
 def extract_symbol_hits(
     results: list[dict[str, Any]],
     limit: int = 20,
     preferred_paths: set[str] | None = None,
     per_path_limit: int = 4,
     query_tokens: list[str] | None = None,
+    query_identifiers: list[str] | None = None,
+    strict_identifiers: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     # Collect ALL candidate symbols per path first, then keep the per_path_limit
     # that are most RELEVANT to the query — not the first N in declaration order.
     # Index stores up to max_symbol_hints_per_doc symbols in source order; a huge
     # file's root-cause methods sit far down that list, so a positional cap drops
     # them before the relevance sort can ever see them.
+    #
+    # query_identifiers (exact method/class names named in the query) guarantee a
+    # slot for a matching symbol regardless of per_path_limit -- retrieval recall
+    # is bounded by whatever survives this stage, and a later re-ranker (e.g.
+    # score_primary_owner_candidate()'s exact-identifier bonus) can never recover
+    # a candidate this cap already discarded. _symbol_query_relevance() below only
+    # counts generic token overlap and has no awareness of an exact identifier
+    # match, so without this, a query naming an exact method by name could still
+    # lose that method here before the exact-match bonus ever gets a chance to
+    # apply it. This only ever ADDS a candidate back in, never removes or
+    # reorders the existing top-N selection.
+    #
+    # A whole-file-widening version of this (confirming an entire file's cap
+    # once ANY candidate matched) was tried and reverted once already -- it
+    # regressed a previously-working query. Root cause: query_identifier_tokens()
+    # treats any capitalized word as a candidate "identifier" (not just real
+    # camelCase/PascalCase code names), so plain prose words like "Overview" or
+    # "Symptom" incorrectly confirmed many unrelated files at once, flooding the
+    # result with noise. Fixed this time by gating the widening on
+    # strict_identifiers (strict_camel_identifiers()) instead of the loose
+    # query_identifiers -- see below. query_identifiers itself keeps doing the
+    # narrow single-candidate guarantee it always did, unchanged.
+    identifiers_lower = {i.lower() for i in (query_identifiers or []) if i}
+    strict_lower = {i.lower() for i in (strict_identifiers or []) if i}
+    # len >= 3 filters out 1-2 char stop words (is, to, of ...) that appear
+    # as trivial substrings of almost any label (e.g. "to" in "lastAu**to**..."),
+    # producing false label_token_match credits unrelated to real query overlap.
     query_distinctive = {
         token for token in set(query_tokens or [])
-        if token not in _generic_file_tokens()
+        if token not in _generic_file_tokens() and len(token) >= 3
     }
     candidates_by_path: dict[str, list[dict[str, Any]]] = defaultdict(list)
     seen: set[tuple[str, str, int | None]] = set()
@@ -1600,7 +1803,31 @@ def extract_symbol_hits(
         if query_distinctive and len(cands) > per_path_limit:
             # Stable sort: query-relevant symbols first, ties keep source order.
             cands.sort(key=lambda h: -_symbol_query_relevance(str(h.get("label") or ""), query_distinctive))
-        hits.extend(cands[: max(1, per_path_limit)])
+        # Widen this file's cap only when one of its OWN candidates exactly
+        # matches a strict identifier -- real confirmation the query is naming
+        # something that actually lives in this file, not a coincidental prose
+        # word. This lets the file's other, unnamed sibling symbols compete for
+        # a slot instead of being cut off at the default per_path_limit. Still
+        # bounded by _CONFIRMED_FILE_SYMBOL_CAP and still subject to this
+        # function's overall `limit` truncation further below -- unlike the
+        # reverted attempt, this never bypasses either bound.
+        effective_cap = per_path_limit
+        if strict_lower and any(
+            _normalize_symbol_label(str(c.get("label") or "")) in strict_lower for c in cands
+        ):
+            effective_cap = max(effective_cap, _CONFIRMED_FILE_SYMBOL_CAP)
+        kept = cands[: max(1, effective_cap)]
+        if identifiers_lower and len(cands) > len(kept):
+            kept_keys = {(str(h.get("label") or "").lower(), h.get("line")) for h in kept}
+            for cand in cands[len(kept):]:
+                if _normalize_symbol_label(str(cand.get("label") or "")) not in identifiers_lower:
+                    continue
+                cand_key = (str(cand.get("label") or "").lower(), cand.get("line"))
+                if cand_key in kept_keys:
+                    continue
+                kept.append(cand)
+                kept_keys.add(cand_key)
+        hits.extend(kept)
     hits.sort(
         key=lambda item: (
             SYMBOL_KIND_PRIORITY.get(str(item.get("kind") or ""), 9),
@@ -1735,6 +1962,220 @@ def select_primary_owner(
         ),
     )
     return ranked[0] if ranked else None
+
+
+# ---- Second-pass primary-owner rerank (additive, post-processing only) ----
+# Mirrors Elasticsearch/OpenSearch's "rescore" pattern: a secondary scoring
+# pass that only re-examines a small bounded window of the top candidates an
+# earlier stage already produced, combined via normalized (0-1) signals and
+# fixed weights instead of raw unbounded addition. Does NOT modify
+# score_primary_owner_candidate() or select_primary_owner() -- this is a pure,
+# separate post-processing step that runs after them and can be removed
+# without touching either. See rerank_top_primary_owner_candidates() docstring
+# for the full rationale.
+
+# Bounded window of top candidates re-examined -- never the whole symbol_hits
+# pool, matching Elasticsearch/OpenSearch rescore's window_size concept.
+#
+# Widened from 5 to 10 after a real diagnosed case (QUERY_2, the negation
+# query -- see tests/debug_query2_rerank_window.py): a file whose PATH text
+# happened to overlap several distinctive query words (e.g. "forms",
+# "discharge", "summary" all literally in "components/forms/DischargeSummary.tsx")
+# received an uncapped, per-token path bonus in score_primary_owner_candidate()
+# that pushed all 5 of ITS generic symbols above the real answer's rank in the
+# raw sorted pool, even though the real answer's own kind weight is higher
+# (service_method 1050 vs ui_function 900). At window=5 the reranker never
+# even saw the real answer (it was ranked 7th) to compare it. Still bounded --
+# not unbounded -- consistent with Elasticsearch/OpenSearch rescore's
+# window_size being a deliberately small multiple of the final result count,
+# not the whole candidate pool.
+_RERANK_WINDOW = 10
+
+# How much better (on the normalized 0-1 scale) the runner-up must score to
+# override the original pick. Deliberately conservative: a close call keeps
+# the original pick, only a clear disagreement swaps it -- this is what stops
+# the reranker from flipping a case that was already correct on a coin-flip
+# margin.
+_RERANK_OVERRIDE_MARGIN = 0.08
+
+# Fixed importance weights for the normalized signals below. These intentionally
+# do NOT mirror score_primary_owner_candidate()'s raw point values -- the whole
+# point of this pass is that no single signal's raw ceiling (e.g. file-rank's
+# 1100) can dominate purely because its number happens to be large. Sums to 1.0.
+#
+# file_rank is intentionally ABSENT from this reranker even though
+# score_primary_owner_candidate() uses it heavily. Reason: the fusion file
+# ranking that would supply this signal is itself biased by path-bonus
+# inflation -- a file whose path happens to contain query-distinctive tokens
+# gets a large path bonus (+160 per token) in the first-pass scorer, so it
+# ranks high in the fusion and then also scores high on file_rank_signal here.
+# That is a circular bias: the reranker would simply amplify the same mistake
+# the first pass already made, not correct it. Removing file_rank forces the
+# reranker to rely purely on LABEL-grounded and semantically-stable signals
+# (identifier identity, symbol kind, and per-label token overlap), which are
+# immune to the coincidental path-token coincidence that caused the bug.
+#
+# token_overlap is split into label_token_match (0.15) and path_token_match
+# (0.07). A query token appearing in the LABEL of a symbol directly says "this
+# symbol's NAME matches the query", which is much more meaningful than the same
+# token appearing only in its file-path (which may be a pure path coincidence).
+# The split lets a symbol with two label-matching tokens reliably out-score one
+# that got its overlap purely from a coincidentally-named ancestor directory.
+_RERANK_SIGNAL_WEIGHTS = {
+    "identifier_match": 0.40,
+    "kind": 0.40,
+    "label_token_match": 0.15,
+    "path_token_match": 0.05,
+}
+
+
+def _normalized_rerank_signals(
+    hit: dict[str, Any],
+    ranked_file_order: dict[str, int],
+    query_tokens: list[str],
+    query_identifiers: list[str] | None,
+) -> dict[str, float]:
+    """Express score_primary_owner_candidate()'s core signals as 0-1 fractions
+    of their own realistic maximum, instead of raw unbounded points. Used only
+    by rerank_top_primary_owner_candidates() -- does not change or replace
+    score_primary_owner_candidate() itself."""
+    path = str(hit.get("path") or "")
+    normalized_path = path.replace("\\", "/").lower()
+    label = str(hit.get("label") or "")
+    kind = str(hit.get("kind") or "")
+
+    kind_weight = SYMBOL_PRIMARY_OWNER_WEIGHT.get(kind, 100.0)
+    max_kind_weight = max(SYMBOL_PRIMARY_OWNER_WEIGHT.values()) or 1.0
+    kind_signal = kind_weight / max_kind_weight
+
+    # file_rank deliberately not computed here -- see _RERANK_SIGNAL_WEIGHTS
+    # comment for why the fusion file rank is excluded from the reranker.
+
+    # len >= 3 filters out 1-2 char stop words ("is", "to", "of" ...) that appear
+    # as trivial substrings of almost any label (e.g. "to" inside "lastAu**to**..."),
+    # producing false label_token_match credits unrelated to real query overlap.
+    query_distinctive = {
+        token for token in set(query_tokens or [])
+        if token not in _generic_file_tokens() and len(token) >= 3
+    }
+    label_tokens = set(tokenize(label))
+    path_tokens = set(tokenize(normalized_path))
+    label_lower = label.lower()
+
+    # label_token_match: tokens from the query that appear IN THE LABEL itself
+    # (whole-word match via tokenize() OR raw substring in the lowercase label).
+    # A label match directly says "this symbol's own name contains the query
+    # term", which is semantically much stronger than the same token appearing
+    # only in the surrounding file path.
+    label_overlap = sum(
+        1 for token in query_distinctive
+        if token in label_tokens or token in label_lower
+    )
+    label_token_match = min(1.0, label_overlap / 3.0) if query_distinctive else 0.0
+
+    # path_token_match: tokens that hit only the FILE PATH, not the label.
+    # This still gives some credit for file-context relevance (e.g. a service
+    # sitting under "hms/medication/") but at a much lower weight (0.07 vs
+    # 0.15 for label), so a file whose path coincidentally contains query
+    # tokens (the DischargeSummary.tsx path-bonus problem) cannot dominate.
+    path_overlap = sum(
+        1 for token in query_distinctive
+        if (token in path_tokens or token in normalized_path)
+        and token not in label_tokens and token not in label_lower
+    )
+    path_token_match = min(1.0, path_overlap / 3.0) if query_distinctive else 0.0
+
+    identifier_signal = 0.0
+    for identifier in query_identifiers or []:
+        lowered = identifier.lower()
+        if lowered and (lowered in normalized_path or lowered in label.lower()):
+            identifier_signal = 1.0
+            break
+
+    return {
+        "identifier_match": identifier_signal,
+        "kind": kind_signal,
+        "label_token_match": label_token_match,
+        "path_token_match": path_token_match,
+    }
+
+
+def _rerank_score(signals: dict[str, float]) -> float:
+    return sum(_RERANK_SIGNAL_WEIGHTS[name] * value for name, value in signals.items())
+
+
+def rerank_top_primary_owner_candidates(
+    symbol_hits: list[dict[str, Any]],
+    original_pick: dict[str, Any] | None,
+    ranked_file_order: dict[str, int],
+    query_tokens: list[str],
+    query_identifiers: list[str] | None = None,
+    window: int = _RERANK_WINDOW,
+) -> dict[str, Any] | None:
+    """Second-pass, additive rerank of select_primary_owner()'s output.
+
+    Re-examines only a small bounded window of the top candidates that
+    select_primary_owner() already sorted to the front (symbol_hits must
+    already be sorted by score_primary_owner_candidate(), as it is at every
+    current call site) -- never the whole symbol_hits pool. Only overrides the
+    original pick when a normalized (0-1), weighted comparison disagrees with
+    it by a clear margin (_RERANK_OVERRIDE_MARGIN), not on a marginal
+    difference.
+
+    `query_identifiers` should be STRICT identifiers (strict_camel_identifiers()),
+    not the loose query_identifier_tokens()/primary_owner_query_identifiers()
+    lists used elsewhere. Real diagnosed case: a loose identifier like bare
+    "HMS" matches almost every candidate's path in an HMS-domain codebase
+    (nearly every file lives under an hms/ folder), so it contributes a
+    near-universal, non-discriminating 1.0 identifier_match signal to both
+    sides of a comparison -- neutering this signal's 0.35 weight for exactly
+    the queries where a real discriminator matters most. Strict identifiers
+    only match when the query names something genuinely specific.
+
+    Why this can help: score_primary_owner_candidate() combines many signals
+    as raw, unbounded points (file-rank alone can contribute up to 1100), so a
+    candidate can win purely because one signal's raw ceiling is large, not
+    because it's actually the better answer. Normalizing each signal to 0-1
+    before combining prevents any single signal from silently dominating --
+    validated against Elasticsearch/OpenSearch's rescore pattern and general
+    learning-to-rank feature-normalization practice.
+
+    This is a pure post-processing step: it does not modify
+    score_primary_owner_candidate() or select_primary_owner(), and can be
+    unwired from the call site with zero effect on either.
+    """
+    if not original_pick or not symbol_hits:
+        return original_pick
+
+    candidates = symbol_hits[:window]
+    if not candidates:
+        return original_pick
+
+    def candidate_key(hit: dict[str, Any]) -> tuple[str, Any, Any]:
+        return (str(hit.get("label") or "").lower(), hit.get("path"), hit.get("line"))
+
+    original_key = candidate_key(original_pick)
+
+    scored = [
+        (hit, _rerank_score(_normalized_rerank_signals(hit, ranked_file_order, query_tokens, query_identifiers)))
+        for hit in candidates
+    ]
+
+    original_score = next((score for hit, score in scored if candidate_key(hit) == original_key), None)
+    if original_score is None:
+        # Original pick fell outside the window (shouldn't normally happen
+        # since select_primary_owner() already sorted it to #1) -- score it
+        # directly so the comparison is always apples-to-apples.
+        original_score = _rerank_score(
+            _normalized_rerank_signals(original_pick, ranked_file_order, query_tokens, query_identifiers)
+        )
+
+    best_hit, best_score = max(scored, key=lambda item: item[1])
+    if candidate_key(best_hit) == original_key:
+        return original_pick
+    if best_score - original_score >= _RERANK_OVERRIDE_MARGIN:
+        return best_hit
+    return original_pick
 
 
 def score_dependency_entry(

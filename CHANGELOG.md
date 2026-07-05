@@ -4,49 +4,62 @@ All notable changes to ContextBridge MCP will be documented in this file.
 
 ---
 
+## [1.1.3-beta] - 2026-07-04
+
+### Fixed
+- Fix primary-owner selection ignoring a method the query names explicitly, letting a generic method in the same file win instead.
+- Fix a type/interface declaration in a `.tsx` file being misclassified as a real component, letting it win primary-owner over the actual decisive symbol.
+- Fix a shared file's most useful duplicate chunk being selected by raw edge count instead of actual cross-file dependency coverage.
+- Fix the exact-identifier bonus rewarding a method name even when the query explicitly says it is *not* the owner.
+
+### Added
+- Add a more reliable check for when a query genuinely names a real file, so more of that file's methods are considered instead of stopping at the usual cap.
+- Add a second-pass check over the top primary-owner candidates to catch cases where an unrelated or coincidental match was outranking the real answer, with a conservative threshold so it only steps in on a clear difference.
+
+---
+
 ## [1.1.2-beta] - 2026-07-04
 
 ### Fixed
-- **Cross-feature dependency completeness at query time** (`src/search.py`): a shared/hub file (e.g. a common API client) gets one duplicate graph chunk per Graphify pack that references it, each holding only that pack's own scoped subset of the file's real dependency edges. A query's own keyword-relevance scoring naturally favors whichever chunk is topically closest to the query, which could starve out the one chunk that actually holds a cross-feature connection to the answer — even though the connection was correctly present in the index. Added `broadest_chunk_for_path()`, which finds a file's single most-complete chunk (highest edge count) independent of query score, and force-includes it for the top-ranked files so it always rides along with whatever chunk won on keyword matching. Mirrors the standard "parent-child" hierarchical retrieval pattern used in production RAG/code-search systems.
-- **Query-named files falling outside the default result window** (`src/search.py`): when a query names a file outright by its exact filename, that file could still rank below the default `max_files` cutoff if many topically-similar files each picked up generic keyword overlap. The query-relevance scoring never had access to a "the query explicitly named this exact file" signal, only generic word tokens. Added `query_named_files()`, which extracts whole filename-like identifiers directly named in the query text, and a bounded exact-match boost in `aggregate_files()` — the same pattern production code-search ranking systems use: a dedicated boost for filename/symbol matches, separate from generic keyword overlap.
-- **Prop-type interfaces winning over the real decisive symbol** (`src/graphify_loader.py`): `classify_symbol_kind()` classified any capitalized label in a UI component file as a component, with no check for TypeScript type-only declarations. This let prop-type interfaces (the near-universal `XProps`/`XState` naming convention) carry almost the same "primary owner" priority weight as a real component, and often win over it. Verified against the full real index: 155 `Props`-suffixed and 21 `State`-suffixed labels across all packs, 100% type-only declarations, none a real component. Now reclassified as a type-only kind, matching how other pure type declarations are already treated (excluded from the default symbol capture list rather than competing for primary ownership).
+- Fix a shared/hub file's most complete cross-file connection getting dropped in favor of a topically-closer but less complete duplicate chunk.
+- Fix files named explicitly in a query ranking below the default result cutoff despite being an exact filename match.
+- Fix TypeScript `Props`/`State` type-only declarations being picked as the primary symbol over the real component.
 
 ### Changed
-- **`.gitignore`**: the `tests/` folder is now excluded entirely (reverted the earlier per-file tracking exceptions) — all test scripts stay local-only.
+- `.gitignore`: exclude the `tests/` folder entirely — all test scripts stay local-only.
 
 ---
 
 ## [1.1.1-beta] - 2026-07-04
 
 ### Fixed
-- **Cross-file dependency resolution** (`src/graphify_loader.py`): `load_graph_chunks()` was matching graph edges to owner files by node *label* instead of node *id* — the wrong field per the standard node-link graph JSON format edges actually use. This caused `edge_count: 0` and empty `dependency_hints`/`related_files` for files with real cross-file connections. Fixed by resolving both endpoints via `id_to_file` (falling back to `label_to_file`), and by passing the full node list (not just a single file's own nodes) into `collect_dependency_hints()` so cross-file targets can resolve. Verified against a real indexed graph: a previously-broken file's `edge_count` went from 0 to 232, with its true dependency correctly surfaced.
-- **Dependency-relation ranking gap** (`src/search.py`): `DEPENDENCY_RELATION_WEIGHT` had no entries for `inherits`/`imports_from`, so both silently fell back to the generic default (250.0) — scoring *below* generic relations like `contains` (300.0) and `defines` (280.0), even though an inheritance or import edge is a much stronger relevance signal. Added explicit weights (`inherits: 520.0`, `imports_from: 480.0`), matching their sibling relations `uses`/`imports`.
-- **Pin-promoted files missing code blocks** (`mcp_tools/hybrid_tools.py`): a file promoted to `files[0]` by the post-fusion pin/pack reorder could reach the AI with no code snippet, because `code_blocks` is built from the pre-fusion keyword pass and never knew about the promotion. Extracted the previously-inline pin-reorder logic into `reorder_candidates_by_pins()` and added a new `backfill_missing_code_blocks()` that reuses `enrich_symbol_hits()` to fill in the gap within the existing `code_block_max_blocks` budget.
-  - Follow-up fix (same area, found in a second review pass): the initial fix only covered files with *zero* prior symbol hits, and did nothing when the code-block budget was already full — both common cases in practice. Broadened eligibility to the full top-ranked window regardless of prior symbol-hit status, and added an opt-in `priority_paths` eviction path: when the budget is full, lower-priority blocks (outside the current top-ranked window) are evicted — no more than needed, and never a block that belongs to a priority file — to make room for the promoted file. Disabled by default (`priority_paths=None`) to keep any other caller's behavior unchanged.
+- Fix cross-file dependency edges resolving via the wrong graph field, causing missing dependency/related-file data for connected files.
+- Fix `inherits`/`imports_from` dependency edges scoring below weaker relation types due to missing ranking weights.
+- Fix pin/pack-promoted files reaching the AI with no code snippet, including when the code-block budget was already full.
 
 ### Added
-- **Regression test coverage** for previously-untested ranking/backfill logic: `tests/test_ranking_functions.py` (`reserve_top_file_code_block_slots`, `extract_related_files` anchor-based dependency expansion, `reorder_candidates_by_pins`) and `tests/test_backfill_missing_code_blocks.py` (`backfill_missing_code_blocks`, including the eviction path). 15 tests total, all passing.
-- **CB query-phrasing guidance** — `skill/SKILL.md`'s "Usage Rules" (AI-facing: use concrete module/symptom/field keywords, not a full sentence; narrow the query on a weak first result) and `docs/OVERVIEW.md`'s "Prompt Guidance" section (user-facing, same shape: `<module/feature> <specific action/symptom> <any known field/status/button name>`).
+- Add regression test coverage for ranking and code-block backfill logic (15 tests).
+- Add query-phrasing guidance for AI clients and users.
 
 ### Changed
-- **`.gitignore`**: `tests/` was a directory-anchor pattern, which blanket-ignores the whole folder and silently drops any file inside it from version control — including the new permanent regression tests above. Changed to `tests/*` (glob, not directory-anchor) with explicit `!tests/test_ranking_functions.py` / `!tests/test_backfill_missing_code_blocks.py` exceptions, so those two are tracked while ad-hoc/benchmark scripts in the same folder remain ignored.
+- `.gitignore`: track the two new regression test files instead of excluding the whole `tests/` folder.
 
 ---
 
 ## [1.1.0-beta] - 2026-07-02
 
 ### Fixed
-- **Dashboard risk classifier** (`scripts/build_dashboard_stats.py`): the `likely_good` result no longer gets automatically disqualified just because usage wasn't reported (`logged_success_but_zero_usage`). Previously this caused effectively all results to fall into `needs_review` even when retrieval quality (confidence, symbol/location/dependency coverage) was strong. CB now falls back to judging the result on its own retrieval-quality signals when usage isn't reported, instead of penalizing it.
+- Fix dashboard incorrectly flagging strong retrieval results as `needs_review` when usage wasn't reported.
 
 ### Added
-- **Ranking Profile switcher** in the dashboard Settings panel — lets you view available project profiles and switch the active one from a dropdown (`Apply & Restart CB`), instead of manually editing config files or start scripts (`dashboard_server.py`, `dashboard/dashboard.js`, `dashboard/index.html`).
-- **`chunk_central_graph` guidance** in `docs/1. CONFIG_BEFORE_SETUP.md` — documents enabling per-source-file chunking for more precise symbol/cross-module retrieval.
-- **Outcome-reporting documentation** — `record_outcome()`'s optional `used_suggested_files` / `extra_files_read` fields, and the exact method for computing them (compare CB's `top_files` list against files actually opened/edited), are now documented in `skill/SKILL.md` and `docs/AI_ROUTING_RULES.md`. Reporting these is explicitly optional and left to the user/AI's discretion.
-- **`docs/OVERVIEW.md`** — new "How Outcome Logging Works" section explaining that CB's own event record is immutable ground truth, separate from the AI's self-reported outcome.
+- Add a Ranking Profile switcher to the dashboard Settings panel.
+- Document the `chunk_central_graph` config option for more precise cross-module retrieval.
+- Document optional outcome-reporting fields for `record_outcome()`.
+- Add a "How Outcome Logging Works" section to the overview documentation.
 
 ### Changed
-- `1. IMP_Prompts_First/2.GENERATE_PROJECT_PROFILE.md` — profile activation instructions updated to include the new dashboard switcher as the recommended option, alongside the existing manual config-file method.
-- `docs/LIMITATIONS.md` — item 9 expanded to note that dashboard grading partly depends on optional AI usage-reporting, and that CB falls back to its own signals when that reporting is skipped.
+- Update profile activation instructions to include the new dashboard switcher.
+- Expand the limitations documentation to note dashboard grading depends partly on optional usage-reporting.
 
 ---
 
