@@ -14,6 +14,10 @@ http://127.0.0.1:8755/sse/   ← all clients connect here
 
 No more per-client spawning. One process, any number of tools (Claude Code, Cursor, Codex, Gemini, etc.) connect to the same URL.
 
+Stdio transport is also supported (`CONTEXT_BRIDGE_TRANSPORT=stdio`) for clients that
+don't support SSE — but SSE is what this guide covers, since it's what lets multiple
+clients share one server instead of each spawning its own process.
+
 ---
 
 ## Step 1 — Start the Server

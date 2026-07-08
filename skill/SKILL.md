@@ -10,7 +10,9 @@ Then fill in `## Your Project Stack` at the bottom.
 
 ## Connection
 
-ContextBridge MCP runs as a single SSE server: `http://127.0.0.1:8755/sse`
+ContextBridge MCP runs as a single SSE server by default: `http://127.0.0.1:8755/sse`
+(stdio transport is also supported for clients that require it, but SSE is recommended
+so multiple AI clients can share one running server).
 
 **Before using CB:**
 1. Start the server using your OS start script in `context_bridge/setup/`

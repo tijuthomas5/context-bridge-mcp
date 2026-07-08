@@ -68,7 +68,10 @@ Setup is **rerunnable and safe**: it creates config/start files from the `*.exam
 templates only if missing (never overwrites your edits), and rebuilds the index each run.
 Run `setup_context_bridge.bat --force` to reset configs back to the templates.
 
-The MCP server is SSE-based at `http://127.0.0.1:8755/sse`. Point your AI client there.
+The MCP server runs SSE by default at `http://127.0.0.1:8755/sse` — point your AI client
+there. Stdio transport is also supported (set `CONTEXT_BRIDGE_TRANSPORT=stdio` before
+starting) for clients that don't support SSE; SSE is recommended since it lets multiple
+AI clients share one running server instead of each spawning its own process.
 Dashboard: `http://127.0.0.1:8795`. Live stats can lag up to ~15 seconds behind the
 latest activity, and history lists (recent events, missed files, failed queries)
 show the most recent 1000 entries rather than the full lifetime log — both are

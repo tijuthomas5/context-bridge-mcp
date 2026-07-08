@@ -4,6 +4,13 @@ All notable changes to ContextBridge MCP will be documented in this file.
 
 ---
 
+## [1.2.1-beta] - 2026-07-09
+
+### Changed
+- Document that stdio transport is also supported in addition to SSE, across the setup and connection guides.
+
+---
+
 ## [1.2.0-beta] - 2026-07-09
 
 ### Fixed

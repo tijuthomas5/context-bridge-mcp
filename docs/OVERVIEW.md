@@ -135,6 +135,10 @@ If you change mode:
 4. connect your AI tool to `http://127.0.0.1:8755/sse/`
 5. open a new AI chat
 
+Stdio transport is also supported (`CONTEXT_BRIDGE_TRANSPORT=stdio`) for clients that
+don't support SSE, but SSE is recommended — it lets multiple AI clients share one running
+server instead of each spawning its own process.
+
 See [Quick_mcp_setup.md](./Quick_mcp_setup.md) for per-tool connection examples.
 
 ## Prompt Guidance

@@ -100,6 +100,10 @@ Pick a mode when prompted:
 
 The server starts on `http://127.0.0.1:8755/sse/`. Keep the terminal open. All AI clients connect to that URL — no per-client Python path setup needed.
 
+Stdio transport is also supported (`CONTEXT_BRIDGE_TRANSPORT=stdio`) for clients that
+don't support SSE, but SSE is recommended — it lets multiple AI clients share one running
+server instead of each spawning its own process.
+
 ## 5. Project Rules (Optional)
 
 ContextBridge setup gives you the engine, indexes, and MCP runtime.
