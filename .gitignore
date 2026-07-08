@@ -67,6 +67,7 @@ archive/manual-tests/
 
 # Temporary — not yet stabilized, keep local-only for now.
 docs/AI_AGENT_GUIDE.md
+codebase_atlas/
 
 # Local/manual verification scripts for this workspace.
 test_code_deep.py
@@ -74,6 +75,12 @@ test_code_loc.py
 test_frontend_edge.py
 test_verification.py
 test_verification_fixed.py
+
+# ─── repo_sync — real scan output is project-specific, ship *.example.json only ──
+project_map.json
+orphan_review.json
+!project_map.example.json
+# ─────────────────────────────────────────────────────────────────────────
 
 # Local runtime / benchmark / manual review artifacts that often contain
 # project-specific prompts, file names, audit notes, or machine-specific paths.

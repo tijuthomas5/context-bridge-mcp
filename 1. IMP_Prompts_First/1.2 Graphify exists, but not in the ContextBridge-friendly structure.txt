@@ -169,6 +169,20 @@ Normalization decision rule:
   its own declarations as nodes", do not try to fix it inline here -- flag the file and
   run the dedicated symbol-completeness prompt (1.4 in this same folder) on it.
 
+Operational safety rules:
+- Exclude non-source and polluting inputs from Graphify normalization unless the user explicitly asks for them:
+  - test files and test folders such as `__tests__`, `*.test.*`, `*.spec.*`
+  - vendor/build outputs such as `node_modules`, `dist`, `build`, `bin`, `obj`
+  - nested Graphify artifacts such as `graphify-out`, backup Graphify folders, and temporary Graphify build folders
+- Treat backup or temporary Graphify folders such as `graphify-out_pre_*`, `graphify-out_live_before_*`, and `_graphify_*` as non-indexable noise for ContextBridge purposes. Do not graph them and do not leave them inside the effective scan set for a rebuild.
+- When normalizing or rebuilding an existing Graphify area, prefer a safe rebuild pattern:
+  1. preserve the current live Graphify output as backup
+  2. build the normalized output in an isolated temporary folder
+  3. validate that required outputs exist such as `graph.json`, `GRAPH_REPORT.md`, `graph.html`, and `manifest.json` when applicable
+  4. swap the normalized output into the live location only after validation succeeds
+- If Graphify fails because docs, images, or papers require semantic extraction and no API key is available, do not overwrite the live output. Use a code-only fallback when appropriate and report that semantic doc/image extraction was excluded.
+- After any normalization or rebuild that changes Graphify outputs, explicitly remind the user that ContextBridge must be reindexed or synced before CB can use the updated data.
+
 Success criteria:
 - ContextBridge should be able to discover the normalized Graphify structure.
 - Central packs should support business/workflow understanding.

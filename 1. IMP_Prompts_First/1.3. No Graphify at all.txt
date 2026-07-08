@@ -179,6 +179,15 @@ Important constraints:
 - If a flow is too broad, split it into smaller packs.
 - If exact dependencies are not obvious, still create the first-pass ownership graphs and source file maps.
 
+Operational safety rules:
+- Exclude non-source and polluting inputs from first-pass Graphify generation unless the user explicitly asks for them:
+  - test files and test folders such as `__tests__`, `*.test.*`, `*.spec.*`
+  - vendor/build outputs such as `node_modules`, `dist`, `build`, `bin`, `obj`
+  - nested Graphify artifacts, backup Graphify folders, and temporary Graphify build folders if they already exist in parts of the repo
+- Build new Graphify outputs in isolated temporary locations first when practical, then move the finished `graphify-out` into place only after validating that required outputs exist such as `graph.json`, `GRAPH_REPORT.md`, `graph.html`, and `manifest.json` when applicable.
+- If the chosen scope includes docs, images, or papers and Graphify blocks on missing semantic-extraction API keys, do not leave the repo half-updated. Either narrow the scope to code-only for the first pass or stop and report the blocker clearly.
+- After creating initial Graphify outputs, explicitly remind the user that ContextBridge must be reindexed or synced before CB can use the new data.
+
 Success criteria:
 - The repo ends up with a usable Graphify structure for ContextBridge.
 - ContextBridge can route by business pack and by ownership graph.

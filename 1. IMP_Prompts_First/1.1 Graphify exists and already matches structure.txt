@@ -183,6 +183,20 @@ Important constraints:
 - Preserve existing Graphify investment.
 - Optimize for ContextBridge usefulness, not theoretical completeness.
 
+Operational safety rules:
+- Exclude non-source and polluting inputs from Graphify work unless the user explicitly asks for them:
+  - test files and test folders such as `__tests__`, `*.test.*`, `*.spec.*`
+  - vendor/build outputs such as `node_modules`, `dist`, `build`, `bin`, `obj`
+  - nested Graphify artifacts such as `graphify-out`, backup Graphify folders, and temporary Graphify build folders
+- Treat backup or temporary Graphify folders such as `graphify-out_pre_*`, `graphify-out_live_before_*`, and `_graphify_*` as non-indexable noise for ContextBridge purposes. Do not graph them and do not leave them inside the effective scan set for a rebuild.
+- When an existing Graphify folder must be improved, prefer a safe rebuild pattern:
+  1. create a backup of the current live Graphify folder
+  2. build the new Graphify output in an isolated temporary folder
+  3. validate that required outputs exist such as `graph.json`, `GRAPH_REPORT.md`, `graph.html`, and `manifest.json` when applicable
+  4. replace the live Graphify folder only after the isolated build succeeds
+- If Graphify fails because docs, images, or papers require semantic extraction and no API key is available, do not damage the current output. Fall back to a code-only rebuild when that still satisfies the user goal, and report clearly that the rebuild excluded semantic doc/image extraction.
+- After any Graphify create/update/normalization work, explicitly remind the user that ContextBridge must be reindexed or synced before CB can use the new Graphify data.
+
 Success criteria:
 - The repository’s Graphify structure is validated against ContextBridge needs.
 - Any missing but high-value gaps are identified clearly.

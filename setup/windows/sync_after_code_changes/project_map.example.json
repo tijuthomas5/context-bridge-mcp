@@ -1,0 +1,11 @@
+{
+  "_comment_language": "Works with any language -- extensions below are just an example (C# backend, TS frontend). Auto-detect (when this file doesn't exist yet) only recognizes package.json/.ts.tsx.js.jsx, *.csproj/.cs, pyproject.toml/.py, go.mod/.go, pom.xml/.java. Any other language (Rust, Ruby, PHP, etc.) -- just edit 'extensions' below by hand, the scanner doesn't care what you put there. Note: actual pack building still depends on Graphify supporting that language for extraction.",
+  "_comment_roots": "Top-level folders to scan. 'name' = label for reports. 'path' = real folder path, relative to repo root. 'extensions' = which file types count as real code there.",
+  "roots": [
+    { "name": "backend", "path": "your-backend-folder", "extensions": [".cs"] },
+    { "name": "frontend", "path": "your-frontend-folder", "extensions": [".ts", ".tsx"] }
+  ],
+
+  "_comment_excluded_modules": "graphify-out/<module> names to fully skip -- deprecated/legacy areas you never want touched.",
+  "excluded_modules": []
+}

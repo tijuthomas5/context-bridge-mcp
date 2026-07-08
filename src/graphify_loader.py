@@ -1016,6 +1016,12 @@ def load_graph_document(path: Path, project_root: Path, config: dict[str, Any]) 
     except (OSError, json.JSONDecodeError):
         return None
 
+    if not isinstance(data, dict):
+        # Some *.enrichment.json files (e.g. dependency-edges.enrichment.json) are a
+        # flat list of records, not a {nodes, links/edges} graph object -- not this
+        # loader's shape. Skip rather than crash the whole indexer run on data.get().
+        return None
+
     max_nodes = int(config.get("max_graph_nodes_per_doc", 200))
     max_edges = int(config.get("max_graph_edges_per_doc", 300))
     nodes = data.get("nodes") or []
@@ -1079,6 +1085,81 @@ def load_graph_document(path: Path, project_root: Path, config: dict[str, Any]) 
             "dependency_hint_count": len(dependency_hints),
             "dependency_hints": dependency_hints,
             "related_files": related_files[:50],
+        },
+    )
+
+
+def load_dependency_edges_document(path: Path, project_root: Path, config: dict[str, Any]) -> ContextDocument | None:
+    """Handle list-shaped dependency-edges.enrichment.json files.
+
+    These are legitimate CB enrichment files whose natural shape is a flat list of
+    UI-to-backend route mappings (e.g. {"ui_file": ..., "backend_controller": ...,
+    "route": ...}) rather than the {nodes, links/edges} graph shape load_graph_document
+    expects. This is a separate, additive code path -- it does not modify
+    load_graph_document or the graph node/edge pipeline in any way. Per SCIP-style
+    "robust against producer bugs" practice: bad individual entries are skipped, not
+    fatal, and this function never raises -- any unexpected error is caught by its
+    caller and treated as a skip, same as an unreadable file.
+    """
+    rel = normalize_rel(path, project_root)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(data, list):
+        return None
+
+    max_entries = int(config.get("max_dependency_edges_per_doc", 500))
+    max_field_len = 300
+
+    def _clip(value: str) -> str:
+        return value if len(value) <= max_field_len else value[: max_field_len - 3] + "..."
+
+    lines: list[str] = []
+    source_files: list[str] = []
+    for entry in data[:max_entries]:
+        if not isinstance(entry, dict):
+            continue
+        ui_file = _clip(str(entry.get("ui_file") or "").strip())
+        backend = _clip(str(entry.get("backend_controller") or entry.get("backend") or "").strip())
+        route = _clip(str(entry.get("route") or "").strip())
+        if not ui_file or not backend:
+            continue
+        if route:
+            line = f"{ui_file} calls {backend} via {route}"
+        else:
+            line = f"{ui_file} calls {backend}"
+        lines.append(line)
+        source_files.append(canonicalize_source_file(rel, ui_file))
+        source_files.append(canonicalize_source_file(rel, backend))
+
+    lines = dedupe(lines)
+    facts = lines[:25]
+
+    if not lines:
+        return None
+
+    module, pack = infer_module_pack(rel)
+    _, secondary_pack = infer_secondary_area(rel)
+    text = "\n".join(lines)
+    return ContextDocument(
+        id=stable_id(rel),
+        title=f"{pack or module or 'dependency'} dependency edges",
+        text=text,
+        path=rel,
+        source=rel,
+        source_type=path.name,
+        kind="dependency_edge",
+        module=module,
+        pack=pack,
+        files=dedupe(source_files)[:150],
+        facts=dedupe(facts),
+        metadata={
+            "edge_count": len(lines),
+            "size_bytes": path.stat().st_size,
+            "source_level": "secondary" if secondary_pack else "central",
+            "area": module,
         },
     )
 
@@ -1223,7 +1304,18 @@ def iter_indexable_files(project_root: Path, config: dict[str, Any]) -> list[tup
 def build_documents(project_root: Path, config: dict[str, Any]) -> list[ContextDocument]:
     docs: list[ContextDocument] = []
     for path, kind in iter_indexable_files(project_root, config):
-        if path.name == "graph.json" or path.name.endswith(".enrichment.json"):
+        doc = None
+        if path.name == "dependency-edges.enrichment.json":
+            try:
+                doc = load_dependency_edges_document(path, project_root, config)
+            except Exception:
+                # Never let a bug in this additive path take down the whole reindex --
+                # fall through to the normal graph-document handling below, which
+                # already skips non-dict JSON safely.
+                doc = None
+            if doc is None:
+                doc = load_graph_document(path, project_root, config)
+        elif path.name == "graph.json" or path.name.endswith(".enrichment.json"):
             doc = load_graph_document(path, project_root, config)
             if path.name == "graph.json":
                 docs.extend(load_graph_chunks(path, project_root, config))

@@ -4,6 +4,20 @@ All notable changes to ContextBridge MCP will be documented in this file.
 
 ---
 
+## [1.2.0-beta] - 2026-07-09
+
+### Fixed
+- Fix the indexer crashing when an enrichment or graph JSON file is shaped as a list instead of the expected object, so one malformed file no longer aborts the whole reindex.
+
+### Added
+- Add support for indexing UI-to-backend dependency-edge enrichment files as searchable documents, so previously-inert route-mapping data now contributes to file ranking instead of being silently skipped.
+- Add a repo-wide drift scan (`scan_repo.py`) that inventories real source files against what's already covered by existing packs, flags orphaned/uncovered files, and reports suggested pack placement for manual review.
+- Add a companion sync tool (`sync_custom_packs.py`) that detects stale custom packs via content hashing and rebuilds only what changed.
+- Add a hardened pack builder (`build_pack.py`) used by the scan/sync tools, with explicit path-traversal guards on every path read from `source-files.txt` and enforced offline-only extraction (network/LLM API keys are cleared from the process before each rebuild).
+- Add setup documentation covering how the update/sync/reindex pipeline fits together and when each step is needed.
+
+---
+
 ## [1.1.4-beta] - 2026-07-06
 
 ### Fixed
