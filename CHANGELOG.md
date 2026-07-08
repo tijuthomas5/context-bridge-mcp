@@ -11,9 +11,9 @@ All notable changes to ContextBridge MCP will be documented in this file.
 
 ### Added
 - Add support for indexing UI-to-backend dependency-edge enrichment files as searchable documents, so previously-inert route-mapping data now contributes to file ranking instead of being silently skipped.
-- Add a repo-wide drift scan (`scan_repo.py`) that inventories real source files against what's already covered by existing packs, flags orphaned/uncovered files, and reports suggested pack placement for manual review.
-- Add a companion sync tool (`sync_custom_packs.py`) that detects stale custom packs via content hashing and rebuilds only what changed.
-- Add a hardened pack builder (`build_pack.py`) used by the scan/sync tools, with explicit path-traversal guards on every path read from `source-files.txt` and enforced offline-only extraction (network/LLM API keys are cleared from the process before each rebuild).
+- Add a repo-wide drift scan that inventories real source files against what's already covered by existing packs, flags orphaned/uncovered files, and reports suggested pack placement for manual review.
+- Add a companion sync tool that detects stale custom packs via content hashing and rebuilds only what changed.
+- Add a hardened pack builder used by the scan/sync tools, with explicit path-traversal guards on every path read from pack file lists and enforced offline-only extraction (network/LLM API keys are cleared from the process before each rebuild).
 - Add setup documentation covering how the update/sync/reindex pipeline fits together and when each step is needed.
 
 ---
