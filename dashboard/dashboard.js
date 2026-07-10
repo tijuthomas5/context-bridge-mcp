@@ -465,7 +465,6 @@ function renderCards(stats) {
     ["Partial Rate", `${outcomeMetrics.partialRate}%`, `of ${outcomeHint}`],
     ["Failed Rate", `${outcomeMetrics.failedRate}%`, `of ${outcomeHint}`],
     ["Token savings", `${stats.estimated_token_savings_percent}%`, "measured · chars vs full files"],
-    ["Avg Confidence", stats.average_confidence || 0, "retrieval confidence"],
     ["Ranking Profile", stats.latest_ranking_profile || "—", "latest active profile"],
   ];
   setHtml("summaryCards", cards.map(([l, v, h]) =>
@@ -487,6 +486,7 @@ function showTokenSavingsModal() {
   const b = latestStats && latestStats.token_savings_breakdown;
   if (!b) return;
   const fmt = (n) => Number(n || 0).toLocaleString();
+  const metricInfo = (text) => `<span title="${escapeHtml(text)}" aria-label="${escapeHtml(text)}" style="display:inline-block;margin-left:6px;padding:1px 5px;border-radius:999px;background:rgba(125,211,252,.18);border:1px solid rgba(125,211,252,.45);color:#7dd3fc;font-size:11px;font-weight:700;line-height:1.2;cursor:help;vertical-align:middle">i</span>`;
   const pageData = paginateRows((b.rows || []).slice().reverse(), tokenSavingsPage, TOKEN_SAVINGS_PAGE_SIZE);
   tokenSavingsPage = pageData.page;
   const rows = pageData.items.map((r) => `
@@ -510,9 +510,9 @@ function showTokenSavingsModal() {
         <table style="width:100%;border-collapse:collapse;font-size:12.5px">
           <thead><tr style="text-align:left;color:var(--text-muted,#9aa3b2);border-bottom:1px solid var(--border,#2a2f3a)">
             <th style="padding:6px">Query</th>
-            <th style="padding:6px;text-align:right">Delivered</th>
-            <th style="padding:6px;text-align:right">Full files</th>
-            <th style="padding:6px;text-align:right">Saved</th>
+            <th style="padding:6px;text-align:right">Delivered ${metricInfo("How much text CB actually gave the AI")}</th>
+            <th style="padding:6px;text-align:right">Full files ${metricInfo("How much text the AI would have had to read if it opened the whole files CB pointed to")}</th>
+            <th style="padding:6px;text-align:right">Saved ${metricInfo("How much reading CB saved")}</th>
           </tr></thead>
           <tbody>${rows}</tbody>
           <tfoot><tr style="border-top:2px solid var(--border,#2a2f3a);font-weight:bold">
@@ -585,7 +585,6 @@ function renderModePanel(mode, cardsId, tableId, stats) {
     ["Calls",       item.event_count || 0],
     ["Outcomes",    item.outcome_count || 0],
     ["Success",     `${item.success_rate_percent || 0}%`],
-    ["Avg conf.",   item.average_confidence || 0],
     ["Avg files",   item.average_files_returned || 0],
     ["Vec suppress",`${item.suppression_rate_percent || 0}%`],
   ].map(([l, v]) => chip(l, v)).join(""));
@@ -829,9 +828,9 @@ function renderOutcomeBars(stats) {
       </div>`;
   }).join("");
   const riskItems = [
-    ["likely good", "var(--success)", riskCounts.likely_good || 0],
-    ["needs review", "var(--text-muted)", riskCounts.needs_review || 0],
-    ["retrieval miss", "var(--error)", riskCounts.likely_retrieval_miss || 0],
+    ["none", "var(--success)", riskCounts.likely_good || 0],
+    ["review", "var(--text-muted)", riskCounts.needs_review || 0],
+    ["investigate", "var(--error)", riskCounts.likely_retrieval_miss || 0],
     ["graphify gap", "var(--accent)", riskCounts.likely_graphify_gap || 0],
   ];
   const riskRows = riskItems.map(([name, color, count]) => {
@@ -852,9 +851,9 @@ function renderOutcomeBars(stats) {
     : outcomeMetrics.basis === "inferred"
       ? `<div class="muted-text" style="margin-bottom:12px">No recorded outcome logs found in <code>context_bridge/usage/outcomes_*.jsonl</code>. Showing ${inferred} inferred outcome${inferred === 1 ? "" : "s"} from event heuristics.</div>`
       : `<div class="muted-text" style="margin-bottom:12px">Recorded outcomes: ${recorded}${inferred ? ` · inferred: ${inferred}` : ""}</div>`;
-  const riskNote = `<div class="muted-text" style="margin:14px 0 12px">Derived retrieval risk is heuristic-only and helps flag searches that may need review.</div>`;
+  const riskNote = `<div class="muted-text" style="margin:14px 0 12px">This is a heuristic follow-up summary for developers. It suggests where a closer look may help, but it is not the final verdict on retrieval quality.</div>`;
   const aiFlaggedCount = Number(stats.ai_flagged_count || 0);
-  const aiFlaggedNote = `<div class="muted-text" style="margin:14px 0 4px">Separate from the risk buckets above — this counts cases where the calling AI itself reported <code>partial</code>/<code>failed</code> with a specific reason. It never changes the risk counts, it's just a second, independent signal for developers to review.</div>`;
+  const aiFlaggedNote = `<div class="muted-text" style="margin:14px 0 4px">Separate from the follow-up summary above — this counts cases where the calling AI itself reported <code>partial</code>/<code>failed</code> with a specific reason. It is a second, independent developer signal.</div>`;
   const aiFlaggedBlock = `
     <div style="font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px">AI-flagged for review</div>
     ${aiFlaggedNote}
@@ -869,7 +868,7 @@ function renderOutcomeBars(stats) {
     <div style="font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px">Logged outcomes</div>
     ${rows}
     ${riskNote}
-    <div style="font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px">Derived retrieval risk</div>
+      <div style="font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px">Suggested follow-up</div>
     ${riskRows}
     <div style="margin-top:14px">${aiFlaggedBlock}</div>
   `);
@@ -935,11 +934,108 @@ function renderRiskBadge(state) {
   return `<span class="badge ${cls}">${escapeHtml(label)}</span>`;
 }
 
+  // Renders event.follow_up (from compute_follow_up() in build_dashboard_stats.py)
+  // instead of the raw risk_state -- follow_up is already capped/softened
+// server-side so a Strong-quality row can never show alarming wording here
+// ("Investigate"/"Graphify gap" only appear for rows where Quality is
+// actually Moderate/Needs review). This function only renders the label it's
+// given, it makes no severity decisions of its own.
+function renderFollowUpBadge(followUp) {
+  if (!followUp) return `<span class="badge neutral">—</span>`;
+  const mapping = {
+    None: ["ok", "None"],
+    Review: ["neutral", "Review"],
+    Investigate: ["bad", "Investigate"],
+    "Graphify gap": ["mode-hybrid_hash", "Graphify gap"],
+  };
+  const [cls, label] = mapping[followUp] || ["neutral", followUp];
+  return `<span class="badge ${cls}">${escapeHtml(label)}</span>`;
+}
+
+// Presentation-only: turns the raw, unlearned confidence score into a 3-tier
+// badge (Strong / Moderate / Needs review) plus a plain-language evidence
+// tooltip, instead of showing "0.45" as if it were a calibrated probability.
+// Reads quality_grade/evidence_badges already computed server-side in
+// scripts/build_dashboard_stats.py (compute_quality_grade()) -- this function
+// does no scoring of its own, purely renders what was already decided.
+const QUALITY_BADGE_LABELS = {
+  owner_found: "Owner file found",
+  real_code_verified: "Backed by verified real code, not just a doc mention",
+  symbols_present: "Real code symbols found",
+  location_hints_present: "Location hints found",
+  dependency_chain_present: "Dependency chain found",
+};
+
+// Standalone copy of the "i" tooltip style used elsewhere (see metricInfo()
+// inside showTokenSavingsModal()) -- that one is locally scoped to its own
+// function, so a new top-level helper is added here rather than touching it.
+function headerInfoBadge(text) {
+  return `<span title="${escapeHtml(text)}" aria-label="${escapeHtml(text)}" style="display:inline-block;margin-left:6px;padding:1px 5px;border-radius:999px;background:rgba(125,211,252,.18);border:1px solid rgba(125,211,252,.45);color:#7dd3fc;font-size:11px;font-weight:700;line-height:1.2;cursor:help;vertical-align:middle">i</span>`;
+}
+
+function renderQualityBadge(event) {
+  const grade = event.quality_grade;
+  const mapping = {
+    strong: ["ok", "Strong"],
+    moderate: ["neutral", "Moderate"],
+    needs_review: ["bad", "Needs review"],
+  };
+  const [cls, label] = mapping[grade] || ["neutral", "—"];
+  const badges = Array.isArray(event.evidence_badges) ? event.evidence_badges : [];
+  const evidenceText = badges.length
+    ? badges.map((b) => QUALITY_BADGE_LABELS[b] || b).join(" · ")
+    : "No supporting evidence found";
+  const confText = typeof event.confidence === "number" ? event.confidence.toFixed(2) : "—";
+  const title = `Evidence: ${evidenceText}\nRaw confidence (internal, not calibrated): ${confText}`;
+  return `<span class="badge ${cls}" title="${escapeHtml(title)}" style="cursor:help">${escapeHtml(label)}</span>`;
+}
+
 function renderReasonChips(reasons) {
   if (!Array.isArray(reasons) || !reasons.length) return "—";
   return reasons.slice(0, 3).map((reason) =>
-    `<span class="badge neutral" style="margin:0 4px 4px 0">${escapeHtml(String(reason).replaceAll("_", " "))}</span>`
+    `<span class="badge neutral" style="margin:0 4px 4px 0">${escapeHtml(mapFollowUpReason(reason))}</span>`
   ).join("");
+}
+
+function mapFollowUpReason(reason) {
+  const raw = String(reason || "");
+  if (!raw) return "";
+  if (raw === "low_confidence") return "low confidence signal";
+  if (raw === "medium_confidence") return "medium confidence signal";
+  if (raw === "few_files") return "few files returned";
+  if (raw === "no_primary_owner") return "owner file not identified";
+  if (raw === "weak_symbol_coverage") return "limited symbol coverage";
+  if (raw === "weak_location_coverage") return "limited location hints";
+  if (raw === "weak_dependency_coverage") return "limited dependency chain";
+  if (raw === "gap_search_fired") return "gap search was needed";
+  if (raw === "gap_search_added_files") return "gap search added files";
+  if (raw === "gap_search_found_nothing") return "gap search found nothing";
+  if (raw === "latest_gap_log_present") return "recent gap-search log present";
+  if (raw === "latest_gap_log_added_files") return "recent gap search added files";
+  if (raw === "logged_failed") return "logged as failed";
+  if (raw === "logged_success_but_zero_usage") return "no file-usage confirmation logged";
+  if (raw === "ai_relevance_failed") return "AI relevance check failed";
+  if (raw === "ai_relevance_partial") return "AI relevance check was partial";
+  if (raw === "ai_relevance_passed") return "AI relevance check passed";
+  if (raw === "ai_parse_error") return "AI output parse error";
+  if (raw === "ai_parse_incomplete") return "AI output parse incomplete";
+  if (raw.startsWith("failure_reason:")) return `failure reason: ${raw.slice("failure_reason:".length).replaceAll("_", " ")}`;
+  if (raw.startsWith("single_root_heavy_top_files:")) return `top files concentrated in ${raw.split(":")[1] || "one area"}`;
+  if (raw.startsWith("ai_confidence:")) return `AI confidence: ${raw.slice("ai_confidence:".length)}`;
+  return raw.replaceAll("_", " ");
+}
+
+function mapSuggestedNextStep(actionLabel) {
+  const raw = String(actionLabel || "");
+  if (!raw) return "—";
+  const mapping = {
+    "trust result": "No action needed",
+    "review owner files": "Review owner files",
+    "review AI output": "Review AI output",
+    "improve query/profile": "Investigate retrieval",
+    "improve graphify pack": "Check Graphify coverage",
+  };
+  return mapping[raw] || raw;
 }
 
 function renderRecentEvents(stats) {
@@ -956,11 +1052,11 @@ function renderRecentEvents(stats) {
         <td>${escapeHtml(event.tool || "")}</td>
         <td class="query-cell">${escapeHtml(event.query || "")}</td>
         <td>${renderOutcomeBadge(event.outcome, event.failure_reason, event.outcome_notes)}</td>
-        <td>${renderRiskBadge(event.risk_state)}${event.ai_flagged ? ` <span class="badge bad" title="AI itself reported partial/failed with a specific reason — independent of CB's own risk classification above." style="cursor:help">⚠ AI flagged</span>` : ""}</td>
-        <td>${renderReasonChips(event.risk_reasons)}</td>
-        <td>${escapeHtml(event.action_label || "—")}</td>
+          <td>${renderFollowUpBadge(event.follow_up)}${event.ai_flagged ? ` <span class="badge bad" title="AI itself reported partial/failed with a specific reason — separate from the follow-up label shown here." style="cursor:help">⚠ AI flagged</span>` : ""}</td>
+          <td>${event.follow_up === "None" ? "—" : renderReasonChips(event.risk_reasons)}</td>
+          <td>${event.follow_up === "None" ? "—" : escapeHtml(mapSuggestedNextStep(event.action_label))}</td>
       <td>${escapeHtml(String(event.analysis_relevance_check ?? ""))}</td>
-      <td>${escapeHtml(String(event.confidence ?? ""))}</td>
+      <td>${renderQualityBadge(event)}</td>
       <td>${escapeHtml(String(event.files_returned ?? ""))}</td>
       <td>${escapeHtml(String(event.symbol_hits_returned ?? ""))}</td>
       <td>${escapeHtml(String(event.location_hints_returned ?? ""))}</td>
@@ -970,7 +1066,7 @@ function renderRecentEvents(stats) {
       </tr>
     `).join("");
     setHtml("recentEvents", `
-    <thead><tr><th>Time</th><th>Mode</th><th>Tool</th><th>Query</th><th>Outcome</th><th>Risk</th><th>Why</th><th>Action</th><th>AI Rel</th><th>Conf</th><th>Files</th><th>Sym</th><th>Loc</th><th>Dep</th><th>Top files</th><th>Event ID</th></tr></thead>
+    <thead><tr><th>Time</th><th>Mode</th><th>Tool</th><th>Query</th><th>Outcome</th><th>Follow-up ${headerInfoBadge("Suggested next step for this result. Strong-quality results may still need review, but not urgent investigation.")}</th><th>Why follow-up</th><th>Suggested next step</th><th>AI Rel</th><th>Quality ${headerInfoBadge("Hover a badge to see raw confidence + evidence found")}</th><th>Files</th><th>Sym</th><th>Loc</th><th>Dep</th><th>Top files</th><th>Event ID</th></tr></thead>
         <tbody>${rows || emptyRow(16)}</tbody>
       `);
     setHtml("recentEventsPager", renderPager(pageData.page, pageData.pages, pageData.total, "changeRecentEventsPage(-1)", "changeRecentEventsPage(1)", "events"));
@@ -990,19 +1086,18 @@ function renderMissedFiles(stats) {
       <td class="mono-cell">${escapeHtml(item.event_id || "")}</td>
     </tr>
   `).join("");
-  setHtml("missedFiles", `<thead><tr><th>File</th><th>Reason</th><th>Status</th><th>Event</th></tr></thead><tbody>${rows || emptyRow(4)}</tbody>`);
+  setHtml("missedFiles", `<thead><tr><th>File</th><th>Follow-up reason</th><th>Status</th><th>Event</th></tr></thead><tbody>${rows || emptyRow(4)}</tbody>`);
 }
 
 function renderLowConfidence(stats) {
   const rows = (stats.low_confidence_searches || []).slice(-100).reverse().map((item) => `
-    <tr>
-      <td class="query-cell">${escapeHtml(item.query || "")}</td>
-      <td>${escapeHtml(item.tool || "")}</td>
-      <td>${escapeHtml(String(item.confidence ?? ""))}</td>
-      <td class="mono-cell">${escapeHtml(item.event_id || "")}</td>
-    </tr>
-  `).join("");
-  setHtml("lowConfidence", `<thead><tr><th>Query</th><th>Tool</th><th>Conf</th><th>Event</th></tr></thead><tbody>${rows || emptyRow(4)}</tbody>`);
+      <tr>
+        <td class="query-cell">${escapeHtml(item.query || "")}</td>
+        <td>${escapeHtml(item.tool || "")}</td>
+        <td class="mono-cell">${escapeHtml(item.event_id || "")}</td>
+      </tr>
+    `).join("");
+  setHtml("lowConfidence", `<thead><tr><th>Query</th><th>Tool</th><th>Event</th></tr></thead><tbody>${rows || emptyRow(3)}</tbody>`);
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────

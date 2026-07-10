@@ -368,9 +368,18 @@ def classify_event_risk(event: dict[str, Any], outcome: dict[str, Any] | None, g
         reasons.append("ai_parse_incomplete")
     if failure_reason and failure_reason != "none":
         reasons.append(f"failure_reason:{failure_reason}")
-    if confidence < 0.70:
+    # These thresholds were tuned against a confidence formula whose divisor was so
+    # small (45.0) that virtually every real match saturated near the 0.95 cap --
+    # under that regime, 0.70/0.85 were effectively "any real match at all" cutoffs.
+    # search.py's confidence formula is now calibrated to real score scale (see
+    # confidence_score_scale in config), so confidence actually spans a meaningful
+    # range instead of pinning near 0.95. Retuned below against this project's real
+    # observed top_score range (~6.3K-67.5K, median ~23.4K) so these tiers keep
+    # discriminating weak/medium/strong the way they were originally meant to,
+    # instead of everything trivially clearing the old, now-unreachable cutoffs.
+    if confidence < 0.40:
         reasons.append("low_confidence")
-    elif confidence < 0.85:
+    elif confidence < 0.55:
         reasons.append("medium_confidence")
     if files_returned <= 3:
         reasons.append("few_files")
@@ -417,7 +426,12 @@ def classify_event_risk(event: dict[str, Any], outcome: dict[str, Any] | None, g
         else:
             graphify_gap_suspected = True
 
-    if outcome_name == "failed" or analysis_rc == "FAILED" or confidence < 0.60 or (not primary_owner and symbol_hits < 5):
+    # Same recalibration as the low/medium tags above -- 0.60/0.88/0.70 were reachable
+    # by almost every real match under the old, unscaled confidence formula. Retuned
+    # against this project's real score range so "likely_retrieval_miss" only fires
+    # for genuinely weak matches, and "likely_good" only requires above-median
+    # confidence rather than a near-best-case score that most real matches never hit.
+    if outcome_name == "failed" or analysis_rc == "FAILED" or confidence < 0.30 or (not primary_owner and symbol_hits < 5):
         risk_state = "likely_retrieval_miss"
         action_label = "improve query/profile"
     elif analysis_parse_error or analysis_parse_incomplete:
@@ -430,7 +444,7 @@ def classify_event_risk(event: dict[str, Any], outcome: dict[str, Any] | None, g
         risk_state = "likely_graphify_gap"
         action_label = "improve graphify pack"
     elif (
-        confidence >= 0.88
+        confidence >= 0.65
         and primary_owner
         and symbol_hits >= 20
         and location_hints >= 8
@@ -444,7 +458,7 @@ def classify_event_risk(event: dict[str, Any], outcome: dict[str, Any] | None, g
         outcome_name == "success"
         and used_suggested >= 3
         and primary_owner
-        and confidence >= 0.70
+        and confidence >= 0.50
         and gap_fired == 0
     ):
         risk_state = "likely_good"
@@ -458,7 +472,7 @@ def classify_event_risk(event: dict[str, Any], outcome: dict[str, Any] | None, g
         "risk_state": risk_state,
         "risk_reasons": reasons,
         "action_label": action_label,
-        "owner_strength": "strong" if primary_owner and confidence >= 0.88 else "weak" if not primary_owner else "medium",
+        "owner_strength": "strong" if primary_owner and confidence >= 0.65 else "weak" if not primary_owner else "medium",
         "evidence_strength": (
             "strong" if symbol_hits >= 20 and location_hints >= 8 and dependency_hints >= 5
             else "medium" if symbol_hits >= 8 and location_hints >= 4
@@ -467,6 +481,141 @@ def classify_event_risk(event: dict[str, Any], outcome: dict[str, Any] | None, g
         "graphify_gap_suspected": graphify_gap_suspected,
         "latest_gap_log_matches": latest_gap_matches,
     }
+
+
+def compute_quality_grade(event: dict[str, Any], risk: dict[str, Any]) -> dict[str, Any]:
+    """DASHBOARD-ONLY presentation helper -- does not run inside CB's live query
+    path (this whole file is an offline stats builder that reads already-saved
+    usage logs). Purely additive: reads fields classify_event_risk() already
+    computed above plus a few raw event fields, and does not modify
+    classify_event_risk() or any of its existing output.
+
+    Real-world rationale (why this exists instead of just showing raw
+    confidence): CB's raw confidence is an unlearned, hand-tuned point-sum, not
+    a calibrated probability -- showing "confidence: 0.45" implies a precision
+    the number doesn't have. Production retrieval/RAG tools instead surface a
+    coarse quality tier plus the actual grounding evidence (citations, sources
+    found) rather than a raw score. This mirrors that: a 3-tier grade for the
+    headline display, plus an evidence_badges list (what was actually found:
+    owner, verified code, symbols, dependency chain) for a detail tooltip.
+    Raw confidence stays available in the payload for internal/tooltip use,
+    it's just not the primary signal anymore.
+
+    Deliberately does NOT invent a new "top files coherence" check beyond what
+    classify_event_risk() already flags (single_root_heavy_top_files) --
+    top_files in the logged event is a flat path list with no module/pack tag
+    attached, so real coherence scoring would need data this stats builder
+    doesn't have without reading extra files. Kept to signals that are cheap,
+    already-logged, and unambiguous instead of guessing.
+    """
+    primary_owner = bool(event.get("primary_owner_present"))
+    code_blocks = int(event.get("code_blocks_returned") or 0)
+    symbol_hits = int(event.get("symbol_hits_returned") or 0)
+    location_hints = int(event.get("location_hints_returned") or 0)
+    dependency_hints = int(event.get("dependency_chain_returned") or 0)
+    risk_state = str(risk.get("risk_state") or "")
+    owner_strength = str(risk.get("owner_strength") or "")
+    evidence_strength = str(risk.get("evidence_strength") or "")
+
+    badges: list[str] = []
+    if primary_owner:
+        badges.append("owner_found")
+    # A code_block only ever gets attached after CB reads and verifies the
+    # real source file at that line (see backfill_missing_code_blocks() /
+    # enrich_symbol_hits() in the engine) -- its presence is the closest
+    # available proxy in already-logged data for "this owner is backed by
+    # real, verified code," not just a documentation/hint mention. This file
+    # does not read raw symbol_hits[].source_type itself (that field isn't
+    # persisted into the logged event at all), so code_blocks_returned > 0 is
+    # used as the available stand-in signal.
+    if code_blocks > 0:
+        badges.append("real_code_verified")
+    if symbol_hits >= 8:
+        badges.append("symbols_present")
+    if location_hints >= 4:
+        badges.append("location_hints_present")
+    if dependency_hints >= 3:
+        badges.append("dependency_chain_present")
+
+    # Graded directly from the evidence badges above -- NOT from
+    # classify_event_risk()'s risk_state/owner_strength. Those are gated on
+    # confidence >= 0.65 and/or a logged outcome == "success", which most
+    # queries in a usage log never have (ad-hoc/manual test queries never go
+    # through record_outcome()). That made genuinely accurate answers with
+    # real evidence get graded "needs_review" purely because no outcome was
+    # ever recorded or confidence sat in the 0.4-0.6 range -- the opposite of
+    # what this grade is supposed to communicate. Grading straight from
+    # evidence badges (which don't depend on confidence or logged outcomes at
+    # all) fixes that: an answer with a real owner, verified code, and good
+    # symbol/location/dependency coverage grades Strong regardless of whether
+    # anyone ever called record_outcome() on it.
+    if not primary_owner or code_blocks == 0:
+        quality_grade = "needs_review"
+    elif len(badges) >= 5:
+        quality_grade = "strong"
+    else:
+        quality_grade = "moderate"
+
+    return {
+        "quality_grade": quality_grade,
+        "evidence_badges": badges,
+    }
+
+
+def compute_follow_up(
+    quality_grade: str,
+    risk_state: str,
+    outcome_value: str = "",
+    ai_flagged: bool = False,
+    proof_state: str = "",
+) -> dict[str, Any]:
+    """DASHBOARD-ONLY presentation helper, same scope/rules as
+    compute_quality_grade() above -- additive, does not modify
+    classify_event_risk(), does not run in CB's live query path.
+
+    Real problem this fixes: the old "Risk" badge (classify_event_risk()'s
+    risk_state, e.g. "Likely retrieval miss") is confidence/outcome-based, so
+    it can fire on a row that Quality (evidence-based, see
+    compute_quality_grade()) correctly grades Strong -- a genuinely good
+    retrieval that just has low raw confidence or no logged outcome. Showing
+    "Strong" next to "Likely retrieval miss" reads as a flat contradiction to
+    a developer scanning the table, even though the two signals are
+    deliberately measuring different things.
+
+    Fix: reframe risk_state into a softer "what should a developer actually
+    do" label, and cap it by evidence first. If Quality is Strong, follow-up
+    defaults to None unless there is an explicit miss signal such as a logged
+    partial/failed outcome, AI-flagged review, or a benchmark-confirmed miss.
+    Confidence-only heuristics are not enough to force review on a Strong row.
+    """
+    explicit_miss = (
+        ai_flagged
+        or outcome_value in ("partial", "failed")
+        or proof_state in ("confirmed_cb_miss", "confirmed_graphify_gap")
+    )
+
+    if quality_grade == "strong":
+        follow_up = "Review" if explicit_miss else "None"
+    elif quality_grade == "moderate":
+        if explicit_miss:
+            follow_up = "Review"
+        elif risk_state == "likely_good":
+            follow_up = "None"
+        elif risk_state == "likely_graphify_gap":
+            follow_up = "Graphify gap"
+        elif risk_state == "likely_retrieval_miss":
+            follow_up = "Investigate"
+        else:
+            follow_up = "Review"
+    else:  # quality_grade == "needs_review" -- evidence itself is weak
+        if risk_state == "likely_graphify_gap":
+            follow_up = "Graphify gap"
+        elif risk_state in ("likely_retrieval_miss", "needs_review"):
+            follow_up = "Investigate"
+        else:
+            follow_up = "Review"
+
+    return {"follow_up": follow_up}
 
 
 def build_index_health() -> dict[str, Any]:
@@ -609,7 +758,9 @@ def build_stats() -> dict[str, Any]:
                 outcome = "failed"
             elif analysis_rc == "PARTIAL":
                 outcome = "partial"
-            elif files_returned == 0 or (isinstance(confidence, (int, float)) and float(confidence) < 0.45):
+            # Recalibrated alongside classify_event_risk() above -- see that comment
+            # for why 0.45 is no longer the right cutoff under the rescaled formula.
+            elif files_returned == 0 or (isinstance(confidence, (int, float)) and float(confidence) < 0.25):
                 outcome = "failed"
             elif analysis_parse_incomplete:
                 outcome = "partial"
@@ -844,7 +995,8 @@ def build_stats() -> dict[str, Any]:
             "confidence": event.get("confidence"),
         }
         for event in events
-        if isinstance(event.get("confidence"), (int, float)) and float(event["confidence"]) < 0.45
+        # Recalibrated alongside classify_event_risk() above.
+        if isinstance(event.get("confidence"), (int, float)) and float(event["confidence"]) < 0.25
     ][:25]
 
     recent_events: list[dict[str, Any]] = []
@@ -877,6 +1029,7 @@ def build_stats() -> dict[str, Any]:
         if ai_flagged:
             ai_flagged_count += 1
         if _event_index >= _recent_events_start:
+            _quality = compute_quality_grade(event, risk)
             recent_events.append({
                 **event,
                 "outcome": (outcome or {}).get("outcome"),
@@ -884,6 +1037,14 @@ def build_stats() -> dict[str, Any]:
                 "outcome_notes": (outcome or {}).get("notes"),
                 "ai_flagged": ai_flagged,
                 **risk,
+                **_quality,
+                **compute_follow_up(
+                    _quality["quality_grade"],
+                    str(risk.get("risk_state") or ""),
+                    str(outcome_value or ""),
+                    bool(ai_flagged),
+                    str(proof.get("proof_state") or ""),
+                ),
                 **proof,
             })
 

@@ -160,6 +160,27 @@ That file should name:
 - Include real bug wording even when the module name is omitted, for example:
   `event images` + `linked order details`, `treatment master` + `staff availability`,
   `report guard` + `exception filter`.
+- Cross-pack backend ownership check: when a pack's workflow ends in a state change owned
+  by a shared/central service that actually belongs under a different pack (e.g. a charge,
+  pricing, or ledger-posting service that naturally sits in a "catalog"/"pricing"/"billing"
+  pack but is genuinely invoked by this pack's own workflow), do not treat the workflow
+  pack as self-contained. Include that shared owner file in this pack's own
+  `raw/source-files.txt` too -- a workflow's true decisive owner can legitimately belong to
+  more than one pack's file list from the start, not just get added later as a fix.
+  CRITICAL -- do not stop at the `raw/source-files.txt` line. Run this shared owner file
+  through the same real AST/graph extraction as every other file in this pack, so it gets
+  real class/method nodes in this pack's `raw/graph.json` and a copy in `raw/corpus/`.
+  ContextBridge's ranking gives real scoring weight to actual graph presence, not to a
+  plain text mention -- a file only listed in `source-files.txt` stays effectively
+  invisible to ranking even though it is technically "in" the pack. Build this in from
+  the first pass, the same way every other pack file gets real extraction.
+- Explicit-decisive-owner check: when a pack's `behavior/retrieval-hints.md` will list
+  several plausible owner files that could all reasonably answer a similar-sounding query
+  (e.g. several UI modal files, or a generic service next to the one file that actually
+  performs the specific action), do not just list them side by side. Name which one is THE
+  decisive owner for the pack's core symptom, and say briefly why (e.g. "X posts the actual
+  charge; Y and Z only read/display it"). Build this distinction in from the first pass
+  rather than leaving all candidates undifferentiated.
 
 Required output format:
 1. Repo source-root understanding

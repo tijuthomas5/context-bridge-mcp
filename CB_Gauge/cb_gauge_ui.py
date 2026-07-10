@@ -578,7 +578,9 @@ async def run_mcp_test(file_paths: list, server_url: str, session_id: str):
                                     confidence = float(res_data.get('confidence', 0.0))
                                     files_returned = len(res_data.get('files', []))
                                     
-                                    if files_returned == 0 or confidence < 0.45:
+                                    # Recalibrated to match search.py's confidence_score_scale fix --
+                                    # see build_dashboard_stats.py's classify_event_risk() comment.
+                                    if files_returned == 0 or confidence < 0.25:
                                         status = "failed"
                                         missed = []
                                         reason = "bad_ranking"

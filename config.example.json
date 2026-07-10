@@ -172,7 +172,10 @@
     "search": {
       "file_candidate_documents": 200,
       "max_results": 12,
-      "max_files": 25
+      "max_files": 25,
+      "max_files_per_document_in_aggregation": 0,
+      "confidence_score_scale": 45.0,
+      "symbol_injection_window": 6
     },
     "ignore": {
       "ignore_parts": [

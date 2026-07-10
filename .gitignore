@@ -55,6 +55,8 @@ change_port.bat
 run_full_quality_suite.bat
 start_mcp_server.bat
 start_mcp_server_hybrid.bat
+
+start_Context_Bridge_DEBUG_LOCAL.bat
 evals/
 archive/artifacts/
 archive/manual-tests/

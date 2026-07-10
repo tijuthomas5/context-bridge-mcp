@@ -516,6 +516,21 @@ def canonicalize_source_file(graph_rel_path: str, source_file: str) -> str:
     value = source_file.replace("\\", "/").strip()
     if not value:
         return value
+    # Graphify's own graph.json sometimes records a node's location as the path to
+    # its own extracted "raw/corpus/" mirror copy rather than the real repo-relative
+    # source path (e.g. ".../graphify-out/<module>/<pack>/raw/corpus/main_service/
+    # Foo.cs"). Everything after "raw/corpus/" IS already the real, complete
+    # repo-relative path -- Graphify only ever mirrors a file under its own real
+    # relative location, so no further root-prefixing is needed or correct here.
+    # This must run first and return immediately: the source-root-prefix check just
+    # below would otherwise short-circuit and hand back the raw corpus path
+    # unchanged, since "graphify-out/" is itself one of the recognized prefixes.
+    # Works on both absolute and relative incoming paths -- str.find() locates the
+    # marker anywhere in the string either way.
+    corpus_marker = "raw/corpus/"
+    corpus_idx = value.find(corpus_marker)
+    if corpus_idx != -1:
+        return value[corpus_idx + len(corpus_marker):]
     source_root_prefixes = _ACTIVE_CONFIG.get("_source_root_prefixes") or DEFAULT_SOURCE_ROOT_PREFIXES
     if value.startswith(tuple(source_root_prefixes)):
         return value
@@ -712,6 +727,84 @@ def _resolve_tsx_declaration_kind(
     return None
 
 
+def _resolve_ts_type_alias_kind(
+    label: str,
+    source_file: str,
+    line: int | None,
+    project_root: Path | None,
+    line_verify_window: int = 12,
+) -> str | None:
+    """Plain-`.ts` counterpart of the type/interface/enum half of
+    _resolve_tsx_declaration_kind() above -- additive, does not touch or call
+    that function, so .tsx classification behavior is unchanged.
+
+    Real diagnosed case: classify_symbol_kind()'s plain `.ts`/`.js`/`.jsx`
+    branch previously classified EVERY node in a `.ts` file as "ui_function"
+    unconditionally, regardless of whether it was a real function/const or a
+    plain `export type X = ...` / `export interface X {...}` / `export enum X`
+    declaration. Confirmed on a real file: main_ui/src/modules/hms/types/
+    admissionPolicy.types.ts line 1 is `export type HmsBaseFamily = "OPD_LIKE"
+    | "INPATIENT_LIKE" | "CUSTOM" | string;` -- a type alias, not a function --
+    yet it was scored with SYMBOL_PRIMARY_OWNER_WEIGHT's "ui_function" weight
+    (900, close to a real ui_component's 1000) instead of "dto_type" (350).
+    Combined with real path-token overlap (the query's own words appearing in
+    "admissionPolicy.types.ts"), that inflated weight was enough for this
+    supporting type file to outscore the actual decisive owner
+    (DischargeSummary.tsx, a real ui_component) for query evt_1dc058690a9b4f6e.
+
+    Spot-checked this is not an isolated case: main_ui/src/modules/hms/api/
+    hmsApi.ts mixes real functions (`export const clearHmsSessionCache = ...`)
+    with type aliases (`export type HmsPaymentMethodOptionDto = ...`) in the
+    same file -- the old blanket "ui_function" classification silently
+    mislabeled every type alias in every `.ts` file across the codebase, not
+    just this one query's file. This fix corrects all of them the same way
+    _resolve_tsx_declaration_kind() already corrects `.tsx` files.
+
+    Deliberately narrow scope: only returns a value when the real declaration
+    line is found AND is a type/interface/enum keyword ("dto_type"). Returns
+    None otherwise (declaration is a real class/function/const/let/var, or the
+    file/line can't be read) so the caller falls back to the existing,
+    unchanged "ui_function" default -- this can only ever correct a
+    misclassified type alias, never relabel a real function as anything else.
+    Only wired for `.ts` (not `.js`/`.jsx`): `type`/`interface`/`enum` are
+    TypeScript-only keywords, so checking plain `.js` would only cost a wasted
+    disk read on every call for zero possible benefit.
+
+    Reuses the same _decl_line_pattern()/linecache/line_verify_window
+    machinery already proven for `.tsx` (see _resolve_tsx_declaration_kind
+    docstring) rather than inventing a second tolerance/lookup mechanism.
+    Bounded read (line_verify_window lines each direction, default 12) keeps
+    the added cost negligible -- this only runs once per capitalized `.ts`
+    symbol node during indexing, not per query, so it has no effect on live
+    query latency at all.
+    """
+    if not line or not project_root:
+        return None
+    try:
+        abs_path = (project_root / source_file).resolve()
+    except OSError:
+        return None
+    if not abs_path.exists():
+        return None
+    abs_path_str = str(abs_path)
+    pattern = _decl_line_pattern(label)
+    window = max(1, line_verify_window)
+    start = max(1, line - window)
+    end = line + window
+    for probe in range(start, end + 1):
+        text = linecache.getline(abs_path_str, probe)
+        if not text:
+            continue
+        match = pattern.match(text)
+        if not match:
+            continue
+        keyword = match.group(1)
+        if keyword in ("type", "interface", "enum"):
+            return "dto_type"
+        return None
+    return None
+
+
 def classify_symbol_kind(
     label: str,
     source_file: str,
@@ -762,7 +855,14 @@ def classify_symbol_kind(
         if normalized_label.endswith("State"):
             return "dto_type"
         return "ui_component" if normalized_label[:1].isupper() else "ui_function"
-    if path.endswith((".ts", ".js", ".jsx")):
+    if path.endswith(".ts"):
+        resolved = _resolve_ts_type_alias_kind(
+            normalized_label, source_file, line, project_root, line_verify_window
+        )
+        if resolved is not None:
+            return resolved
+        return "ui_function"
+    if path.endswith((".js", ".jsx")):
         return "ui_function"
     if normalized_label.endswith("Dto") or normalized_label.endswith("Dtos"):
         return "dto_type"

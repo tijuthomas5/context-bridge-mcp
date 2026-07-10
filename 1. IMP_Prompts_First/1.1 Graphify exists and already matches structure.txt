@@ -104,6 +104,33 @@ Validation rules:
 - In retrieval hints, include real bug wording even when the top-level module word is
   omitted. Example patterns: `event images` + `linked order details`, `treatment master`
   + `staff availability`, `report guard` + `exception filter`.
+- Cross-pack backend ownership check: when a pack's workflow ends in a state change owned
+  by a shared/central service that actually lives in a different pack (e.g. a charge,
+  pricing, or ledger-posting service defined under a "catalog"/"pricing"/"billing" pack
+  but genuinely invoked by this pack's own workflow), do not assume the workflow pack is
+  self-contained. Confirm whether that shared owner file is present in this pack's own
+  `raw/source-files.txt`. If it is missing, add it here as an additive fix even though its
+  primary home is a different pack -- a workflow's true decisive owner can legitimately
+  belong to more than one pack's file list. Flag this explicitly as a missing-file gap,
+  not a wording gap.
+  CRITICAL -- a `raw/source-files.txt` line alone is NOT a sufficient fix for this case.
+  ContextBridge's ranking gives real scoring weight to a file's actual graph presence
+  (`raw/corpus/` + nodes/edges in `raw/graph.json`), not to a plain text mention -- a
+  file listed only in `source-files.txt` stays effectively invisible to ranking even
+  though it is technically "in" the pack. When this check finds a missing shared owner,
+  the fix must run that file through the same real AST/graph extraction this pack's other
+  files went through (so it gets its own class/method nodes in `raw/graph.json` and a
+  copy in `raw/corpus/`), not just an added line in `source-files.txt`. Only fall back to
+  a text-only listing if real extraction genuinely cannot be run, and say so explicitly
+  when reporting the fix.
+- Explicit-decisive-owner check: when a pack's `behavior/retrieval-hints.md` lists several
+  plausible owner files that could all reasonably answer a similar-sounding query (e.g.
+  several UI modal files, or a generic ledger/forms service next to the one file that
+  actually performs the specific action), do not just list them side by side. Name which
+  one is THE decisive owner for the pack's core symptom, and say briefly why (e.g. "X
+  posts the actual charge; Y and Z only read/display it"). A hint file that lists five
+  plausible files with no distinction between them is a weaker fix than one that lists the
+  same five files but marks the real decisive owner.
 - Check whether ownership graphs exist near source areas.
 - Symbol-level completeness check: for a small sample of files already covered by a
   graph.json (not the whole repo), count the top-level functions/const-functions/
@@ -191,9 +218,19 @@ Operational safety rules:
 - Treat backup or temporary Graphify folders such as `graphify-out_pre_*`, `graphify-out_live_before_*`, and `_graphify_*` as non-indexable noise for ContextBridge purposes. Do not graph them and do not leave them inside the effective scan set for a rebuild.
 - When an existing Graphify folder must be improved, prefer a safe rebuild pattern:
   1. create a backup of the current live Graphify folder
-  2. build the new Graphify output in an isolated temporary folder
+  2. build the new Graphify output in an isolated temporary folder OUTSIDE the pack's own
+     `raw/` directory entirely (e.g. a sibling temp path, not a subfolder nested inside
+     `raw/`) -- a temp build folder created INSIDE `raw/` is still inside ContextBridge's
+     scan path even though it feels "isolated," and a folder literally named `graphify-out`
+     nested inside `raw/` will get indexed as if it were a second, separate pack. Real
+     diagnosed case: a rebuild wrote its output to `raw/graphify-out/` instead of a true
+     external temp location, and that leftover nested folder silently double-counted every
+     file it covered in real search results because nothing in step 4 ever removed it.
   3. validate that required outputs exist such as `graph.json`, `GRAPH_REPORT.md`, `graph.html`, and `manifest.json` when applicable
-  4. replace the live Graphify folder only after the isolated build succeeds
+  4. replace the live Graphify folder only after the isolated build succeeds, THEN delete
+     the temporary build folder from step 2 -- do not leave it behind "just in case." A
+     leftover temp build folder with its own `graph.json`/`manifest.json` inside the scan
+     path is functionally identical to a duplicate pack and will get indexed.
 - If Graphify fails because docs, images, or papers require semantic extraction and no API key is available, do not damage the current output. Fall back to a code-only rebuild when that still satisfies the user goal, and report clearly that the rebuild excluded semantic doc/image extraction.
 - After any Graphify create/update/normalization work, explicitly remind the user that ContextBridge must be reindexed or synced before CB can use the new Graphify data.
 

@@ -80,6 +80,7 @@ class HybridRuntimeConfig:
     fusion_strategy: str
     search_max_results: int
     search_max_files: int
+    symbol_injection_window: int
 
 
 def search_context_hybrid(
@@ -192,7 +193,7 @@ def search_context_hybrid(
     _hits_with_symbols = {str(h.get("path") or "").replace("\\", "/").lower() for h in filtered_symbol_hits}
     _top_unseen = {
         str(item.get("path") or "").replace("\\", "/").lower()
-        for item in fused_candidates_extended[:6]
+        for item in fused_candidates_extended[:runtime.symbol_injection_window]
         if str(item.get("path") or "").replace("\\", "/").lower() not in _hits_with_symbols
         and str(item.get("path") or "").strip()
     }
@@ -204,7 +205,7 @@ def search_context_hybrid(
     # a code_block yet), so eligibility can't be limited to _top_unseen alone.
     _top_paths = {
         str(item.get("path") or "").replace("\\", "/").lower()
-        for item in fused_candidates_extended[:6]
+        for item in fused_candidates_extended[:runtime.symbol_injection_window]
         if str(item.get("path") or "").strip()
     }
     filtered_location_hints = [
@@ -497,6 +498,12 @@ def load_hybrid_runtime_config() -> HybridRuntimeConfig:
         fusion_strategy=fusion_strategy,
         search_max_results=clamp_int(search_config.get("max_results"), 12, 1, 25, "max_results"),
         search_max_files=clamp_int(search_config.get("max_files"), 25, 1, 40, "max_files"),
+        # How many top fused-ranked candidates get their symbols force-injected before
+        # select_primary_owner()/rerank_top_primary_owner_candidates() run. Default 6
+        # preserves the original behavior. A file ranked just outside this window is
+        # invisible to owner selection even if it's the correct answer -- see
+        # docs/ADVANCED_TUNING.md for the full explanation and tuning guidance.
+        symbol_injection_window=clamp_int(search_config.get("symbol_injection_window"), 6, 1, 40, "symbol_injection_window"),
     )
 
 
@@ -1268,6 +1275,11 @@ def keyword_file_candidates(keyword_payload: dict[str, Any]) -> list[dict[str, o
                 "pack": item.get("pack"),
                 "files": [path],
                 "retrieval": "keyword",
+                # TEMPORARY diagnostic passthrough -- see
+                # rebalance_cross_pack_file_stacking() in search.py. Remove once
+                # evt_93's weights are calibrated and confirmed.
+                "_rescore_evidence": item.get("_rescore_evidence"),
+                "_rescore_packs": item.get("_rescore_packs"),
             }
         )
     return candidates

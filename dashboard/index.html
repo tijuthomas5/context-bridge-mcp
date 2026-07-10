@@ -169,7 +169,7 @@
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
               Overview
             </div>
-            <div class="section-help">Operational view first: top cards show actual runtime outcomes, token savings, and retrieval confidence.</div>
+            <div class="section-help">Operational view first: top cards show runtime outcomes, token savings, and the active ranking profile.</div>
           </div>
         </div>
         <div class="metric-grid" id="summaryCards"></div>
@@ -202,7 +202,7 @@
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               Search Modes
             </div>
-            <div class="section-help">Per-mode performance: call counts, success rates, and confidence. Per-query detail is in Recent Events below.</div>
+            <div class="section-help">Per-mode performance: call counts, success rates, and retrieval volume. Per-query detail is in Recent Events below.</div>
           </div>
         </div>
         <div class="grid-3">
@@ -250,12 +250,12 @@
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
               Outcome Signals
             </div>
-            <div class="section-help">Logged outcomes stay primary. Derived risk stays here as a heuristic diagnostic signal.</div>
+            <div class="section-help">Logged outcomes stay primary. The follow-up summary below is a heuristic developer signal, not a retrieval verdict.</div>
           </div>
         </div>
         <div class="grid-2">
           <div class="panel">
-            <div class="panel-header"><div class="panel-title">Logged Outcomes vs Derived Risk</div></div>
+            <div class="panel-header"><div class="panel-title">Logged Outcomes vs Follow-up Summary</div></div>
             <div class="panel-body"><div class="outcome-bars" id="outcomeBars"></div></div>
           </div>
           <div class="panel">
@@ -277,7 +277,7 @@
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
               Recent Events
             </div>
-            <div class="section-help">Each row shows the actual logged outcome first, then the heuristic risk signal explaining what may need attention.</div>
+            <div class="section-help">Each row shows the logged outcome first, then a follow-up signal showing whether a developer should take a closer look.</div>
           </div>
         </div>
         <div class="filter-row" id="eventFilters"></div>
@@ -295,16 +295,16 @@
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
               Diagnostics
             </div>
-            <div class="section-help">Missed files and low-confidence queries — use these to tune Graphify or improve prompts.</div>
+            <div class="section-help">Developer diagnostics only — use these panels to spot follow-up areas, tune Graphify, or improve prompts.</div>
           </div>
         </div>
         <div class="grid-2">
           <div class="panel">
-            <div class="panel-header"><div class="panel-title">Missed Files</div></div>
+            <div class="panel-header"><div class="panel-title">Missing or Late-found Files</div></div>
             <div class="panel-body no-pad"><div class="table-wrap"><table id="missedFiles"></table></div></div>
           </div>
           <div class="panel">
-            <div class="panel-header"><div class="panel-title">Low Confidence Searches</div></div>
+            <div class="panel-header"><div class="panel-title">Low Confidence Signals</div></div>
             <div class="panel-body no-pad"><div class="table-wrap"><table id="lowConfidence"></table></div></div>
           </div>
         </div>
@@ -1126,6 +1126,6 @@
      would parse this ever-growing snapshot file for nothing, since a fresh
      live fetch supersedes it in the normal case. See loadDashboardStatsFallback()
      in dashboard.js. -->
-<script src="dashboard.js?v=20260624"></script>
+<script src="dashboard.js?v=20260711d"></script>
 </body>
 </html>

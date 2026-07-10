@@ -87,6 +87,56 @@ GENERIC_FILE_TOKENS_BASE = {
     "frontend", "backend", "implemented", "implementation", "where", "file", "files",
 }
 
+# Deliberately SEPARATE from GENERIC_FILE_TOKENS_BASE/_generic_file_tokens() -- that set
+# feeds score_document() and aggregate_files(), which drive general file search ranking
+# and are already stable/tuned. This set is scoped ONLY to primary-owner symbol scoring
+# (score_primary_owner_candidate()), so this fix cannot change how files rank in general
+# search results, only which SYMBOL wins primary-owner among already-eligible candidates.
+#
+# Real diagnosed case: a query naming "IssueMedicineModal.tsx" explicitly causes
+# query_identifier_tokens() to split off a bare "tsx" identifier (everything after the
+# last "."). Every .tsx candidate's path trivially contains "tsx" -- it's just the file
+# extension -- so without this filter, score_primary_owner_candidate() handed out a flat
+# +900 "identifier match" bonus to any .tsx file for matching something that isn't a real
+# identifier at all and is guaranteed to match every frontend file in the codebase. Same
+# problem applies to any language's extension token (.py, .java, .go, .rb, .php, ...) any
+# time a query names a file with its extension -- not tsx-specific.
+#
+# Short stopwords are included for the same reason: they can appear as bare substrings
+# inside an unrelated identifier (e.g. "is" inside "IssueMedicineModal", or "or" inside
+# "CalendarStoreSelectorModal" -- confirmed real case: "or" from the query phrase "wrong
+# store OR wrong day" matched as a substring of "...StoreSelectOR...", worth 160 points,
+# which was enough by itself to flip primary-owner to the wrong candidate) and were being
+# counted as genuine distinctive-token matches.
+#
+# Deliberately NOT merged into the existing STOP_WORDS set (used by tokenize() globally)
+# for the same scoping reason as the extension tokens above: STOP_WORDS feeds general
+# keyword search/tokenization everywhere in this file, and changing it would affect how
+# ALL documents get scored and ranked, not just primary-owner symbol selection. Keeping
+# a separate list here means this fix cannot touch general search ranking at all.
+#
+# This list intentionally covers common short (2-4 letter) English function words --
+# prepositions, conjunctions, articles, short pronouns -- since these are the ones most
+# likely to appear as an accidental substring inside a longer real identifier. Tokens of
+# length 1 (e.g. "a", "i") never reach this point at all -- tokenize() already drops
+# anything shorter than 2 characters.
+_PRIMARY_OWNER_EXCLUDED_TOKENS = {
+    # common file-extension tokens (language-agnostic, not just this project's stack)
+    "tsx", "ts", "jsx", "js", "cs", "py", "java", "go", "rb", "php", "json", "md", "yml", "yaml",
+    # 2-letter short stopwords that can appear as substrings inside unrelated identifiers
+    "is", "in", "to", "of", "as", "on", "at", "or", "an", "no", "so", "up", "us", "we", "by", "if",
+    # 3-4 letter short stopwords, same reason
+    "the", "and", "for", "are", "was", "has", "not", "but", "yet", "nor", "via", "per",
+    "our", "you", "his", "her", "its", "who", "why", "from", "this", "that", "into", "than", "then", "with",
+}
+
+
+def _is_excluded_owner_token(token: str) -> bool:
+    """Shared exclusion check for score_primary_owner_candidate()'s three token-matching
+    spots (distinctive-token path loop, identifier_hits count, query_identifiers loop) --
+    single place to maintain the excluded list rather than duplicating it three times."""
+    return token.lower() in _PRIMARY_OWNER_EXCLUDED_TOKENS
+
 
 def _generic_file_tokens() -> set[str]:
     """Structural tokens + the active profile's module names (so a query token
@@ -1284,7 +1334,29 @@ def aggregate_files(
     max_files: int,
     query_tokens: list[str],
     named_files: set[str] | None = None,
+    max_files_per_document: int = 0,
 ) -> list[dict[str, Any]]:
+    """
+    max_files_per_document: 0 (default) = no cap, identical to pre-existing behavior --
+    every file a matching document lists goes through the full scoring loop below.
+
+    When set >0, bounds per-query cost for any single document with an unusually long
+    `files` list (e.g. a dependency-edge enrichment doc can list up to 150 files) by only
+    running the full scoring loop on that document's most query-relevant files, not all
+    of them. This mirrors how large-scale search systems (Lucene block-skipping, staged
+    retrieval funnels) bound per-query cost: cheap relevance pass first, expensive scoring
+    only on the bounded survivors -- not a raw positional truncation.
+
+    Deliberately NOT a simple `file_candidates[:cap]` slice: a document's `files` list is
+    stored in first-seen/JSON order (see file_position_divisor()'s own docstring -- this
+    codebase already treats list position as unrelated to relevance and dampens it with a
+    log curve rather than a hard cutoff for exactly that reason). Slicing by raw position
+    would silently drop a genuinely relevant file that happened to be listed late. Instead,
+    when a document's file list exceeds the cap, it's re-ordered by a cheap per-file query
+    token match count first, and only the top `max_files_per_document` of THAT order are
+    kept -- same intent as the existing scoring below, just cheaper, and only used to
+    decide what survives to the real scoring pass.
+    """
     scores: dict[str, float] = defaultdict(float)
     sources: dict[str, set[str]] = defaultdict(set)
     query_intents_all: set[str] = set()
@@ -1308,6 +1380,14 @@ def aggregate_files(
         source_level = str((result.get("metadata") or {}).get("source_level", "")).lower()
         if result.get("pack") == "secondary-ownership" and source_level == "secondary":
             file_candidates = file_candidates[: secondary_file_limit(result)]
+        if max_files_per_document and len(file_candidates) > max_files_per_document:
+            def _quick_query_match_count(fp: str) -> int:
+                norm = fp.replace("\\", "/").lower()
+                return sum(1 for token in result_query_tokens if token in norm)
+            # Stable sort: ties keep their original relative order, so this only
+            # reorders when a file actually matches more query tokens than another.
+            file_candidates = sorted(file_candidates, key=_quick_query_match_count, reverse=True)
+            file_candidates = file_candidates[:max_files_per_document]
         for idx, file_path in enumerate(file_candidates):
             if not file_path:
                 continue
@@ -1408,6 +1488,140 @@ def aggregate_files(
         }
         for path, score in ranked
     ]
+
+
+# ---- Cross-pack file-score rebalancing (additive, post-processing only) ----
+# Mirrors rerank_top_primary_owner_candidates()'s "rescore a small bounded
+# window, only override on a clear margin" pattern (see that function's
+# docstring for the general rationale). This is the file-ranking equivalent:
+# aggregate_files() sums a file's score across every document that lists it
+# (`scores[file_path] += score`, no cap) -- which correctly rewards genuine
+# cross-pack centrality most of the time, but when a query happens to touch
+# two packs that are BOTH topically relevant to it, a file cited by both can
+# out-add a file that is the true single decisive answer but is backed by one
+# strongly relevant pack plus one only-loosely-relevant one.
+#
+# Real diagnosed case (evt_93ba1557fc504bfb, "Discharge Summary shows only
+# self-administered medicines"): ReturnMedicineModal.tsx is listed by two
+# packs that are both genuinely about pharmacy/medicine
+# (inventory-consumption-dispatch + pharmacy-fulfillment-charge-posting), so
+# it accumulates real score from both. DischargeSummary.tsx (the true answer)
+# is ALSO technically listed by two packs, so a naive "count how many packs"
+# fix would treat both files identically and change nothing -- the real tell
+# is that DischargeSummary.tsx's second pack (treatment-order-flow) is only
+# loosely relevant to this specific query, so it contributes far less than
+# ReturnMedicineModal.tsx's second pack does. That's why this dampens by
+# per-pack PEAK document score (how strongly each pack actually backed the
+# file), not by raw pack count.
+#
+# Deliberately a separate, additive pass -- does not modify aggregate_files()
+# or score_document(). Only re-examines a small bounded window of the top
+# already-ranked files, and only overrides aggregate_files()'s original order
+# when the recomputed, per-pack-decomposed evidence disagrees by a clear
+# margin -- never on a close call, so a file that's already winning mostly on
+# its own single-pack strength (the common, correct case) is left untouched.
+_FILE_RESCORE_WINDOW = 10
+_FILE_RESCORE_OVERRIDE_MARGIN = 0.15
+# Each additional pack backing the same file counts for less than the one
+# before it -- extra corroboration still counts, it just can't compound
+# near-linearly the way plain addition does. Floor keeps a 4th+ pack from
+# being worthless, matching the "never fully zero out a signal" convention
+# already used elsewhere (e.g. identifier_corroboration_strength()'s 0.4 floor).
+_FILE_RESCORE_PACK_WEIGHTS = (1.0, 0.35, 0.15)
+_FILE_RESCORE_PACK_WEIGHT_FLOOR = 0.08
+
+
+def _per_pack_peak_scores(file_path: str, results: list[dict[str, Any]]) -> dict[str, float]:
+    """For one file, the single strongest per-document score contributed by
+    each distinct pack that lists it. Uses the PEAK (not sum) within a pack --
+    multiple documents from the SAME pack (graph.json + source-files.txt +
+    behavior/retrieval-hints.md all pointing at the same fact) are expected,
+    legitimate reinforcement of one real signal and are deliberately NOT
+    dampened here; only stacking ACROSS distinct packs is."""
+    peaks: dict[str, float] = {}
+    normalized_target = file_path.replace("\\", "/").lower()
+    for result in results:
+        files = result.get("files") or []
+        if not any(str(f).replace("\\", "/").lower() == normalized_target for f in files):
+            continue
+        pack = str(result.get("pack") or "").strip().lower()
+        if not pack:
+            # Non-Graphify sources (e.g. a plain docs/*.md file) have no pack --
+            # keyed separately per source_type so they still count as one
+            # independent corroborating source rather than being dropped.
+            pack = f"__nopack__:{result.get('source_type', '')}"
+        score = float(result.get("score") or 0.0)
+        if score > peaks.get(pack, 0.0):
+            peaks[pack] = score
+    return peaks
+
+
+def rebalance_cross_pack_file_stacking(
+    ranked_files: list[dict[str, Any]],
+    results: list[dict[str, Any]],
+    window: int = _FILE_RESCORE_WINDOW,
+) -> list[dict[str, Any]]:
+    """Second-pass, additive rescore of aggregate_files()'s output.
+
+    `ranked_files` is aggregate_files()'s own return value (already sorted).
+    `results` is the same per-document result list aggregate_files() was
+    called with -- needed here to re-derive per-pack contributions that
+    aggregate_files() itself already collapsed into a single summed score.
+
+    Pure post-processing: does not modify aggregate_files() or
+    score_document(), and can be unwired from the call site with zero effect
+    on either, exactly like rerank_top_primary_owner_candidates().
+    """
+    if not ranked_files:
+        return ranked_files
+    candidates = ranked_files[:window]
+    rest = ranked_files[window:]
+    if len(candidates) < 2:
+        return ranked_files
+
+    def _evidence_total(item: dict[str, Any]) -> float:
+        peaks = _per_pack_peak_scores(str(item.get("path") or ""), results)
+        if not peaks:
+            return float(item.get("score") or 0.0)
+        ordered_peaks = sorted(peaks.values(), reverse=True)
+        total = 0.0
+        for idx, peak in enumerate(ordered_peaks):
+            weight = (
+                _FILE_RESCORE_PACK_WEIGHTS[idx]
+                if idx < len(_FILE_RESCORE_PACK_WEIGHTS)
+                else _FILE_RESCORE_PACK_WEIGHT_FLOOR
+            )
+            total += peak * weight
+        return total
+
+    evidence_by_id = {id(item): _evidence_total(item) for item in candidates}
+    max_evidence = max(evidence_by_id.values(), default=0.0)
+    # TEMPORARY diagnostic (additive-only, does not affect ranking or scoring):
+    # exposes what this pass actually computed so a live rerun can be used to
+    # calibrate _FILE_RESCORE_PACK_WEIGHTS / _FILE_RESCORE_OVERRIDE_MARGIN with
+    # real numbers instead of guessing again. Safe to remove once evt_93 is
+    # confirmed fixed and the weights are settled.
+    for item in candidates:
+        item["_rescore_evidence"] = round(evidence_by_id[id(item)], 2)
+        item["_rescore_packs"] = len(_per_pack_peak_scores(str(item.get("path") or ""), results))
+    if max_evidence <= 0:
+        return ranked_files
+
+    original_top = candidates[0]
+    original_top_evidence = evidence_by_id[id(original_top)]
+    best_item = max(candidates, key=lambda item: evidence_by_id[id(item)])
+    best_evidence = evidence_by_id[id(best_item)]
+
+    if best_item is original_top:
+        return ranked_files
+    # Only override when the challenger clearly outscores the original pick on
+    # normalized evidence -- a close call keeps aggregate_files()'s own order,
+    # same conservative-margin philosophy as _RERANK_OVERRIDE_MARGIN.
+    if (best_evidence - original_top_evidence) / max_evidence < _FILE_RESCORE_OVERRIDE_MARGIN:
+        return ranked_files
+
+    reordered = sorted(candidates, key=lambda item: evidence_by_id[id(item)], reverse=True)
+    return reordered + rest
 
 
 def detect_top_specific_packs(results: list[dict[str, Any]], limit: int = 4) -> set[str]:
@@ -1975,16 +2189,46 @@ def identifier_corroboration_strength(
 
     Floored at 0.4 so a named identifier never loses its bonus entirely --
     only the DEGREE of the boost changes.
+
+    Word-form canonicalization (_canon below): tokenize()'s pluralization
+    handling is a crude "strip trailing s", which produces a WRONG stem for
+    "-ies" words (e.g. "parties" -> "partie", not the real singular "party").
+    Real diagnosed case: a query names "PartiesController.cs" but only ever
+    uses the plain word "party" (singular) elsewhere in its own descriptive
+    text -- never "parties" or "partie" as literal substrings. Without
+    canonicalization, ident_words for "PartiesController" ends up as
+    {"parties", "partie"}, NEITHER of which ever matches the query's "party"
+    mentions, so corroboration always floors at 0.4 even though the query
+    clearly is about parties/party. Tried first without canonicalization (just
+    adding "party" as a third separate word alongside the existing two): that
+    made no difference at all, because it only grew the denominator (now 3
+    words) without the extra corroborated word being enough to lift the
+    fraction above the 0.4 floor. Canonicalizing instead COLLAPSES all three
+    spellings ("parties", "partie", "party") into one comparison bucket, so
+    corroboration is measured once per real-world word instead of once per
+    spelling variant of that word. Verified directly: this took the party
+    query's fraction from 0/2=0.0 (floored to 0.4) to 1/1=1.0, without
+    changing the outcome of two other already-fixed real queries used as
+    regression checks (pharmacy charge-posting, calendar store/timezone).
     """
-    ident_words = {token for token in tokenize(identifier) if token not in _generic_file_tokens()}
+    def _canon(word: str) -> str:
+        if len(word) > 4 and word.endswith("ies"):
+            return word[:-3] + "y"
+        if len(word) > 3 and word.endswith("ie"):
+            return word[:-2] + "y"
+        if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+            return word[:-1]
+        return word
+
+    ident_words = {_canon(token) for token in tokenize(identifier) if token not in _generic_file_tokens()}
     if not ident_words:
         return 1.0
     identifier_word_counts: Counter[str] = Counter()
     for other in all_identifiers:
         identifier_word_counts.update(
-            token for token in tokenize(other) if token not in _generic_file_tokens()
+            _canon(token) for token in tokenize(other) if token not in _generic_file_tokens()
         )
-    query_word_counts = Counter(query_tokens)
+    query_word_counts: Counter[str] = Counter(_canon(token) for token in query_tokens)
     corroborated = sum(
         1 for word in ident_words
         if query_word_counts.get(word, 0) > identifier_word_counts.get(word, 0)
@@ -2024,12 +2268,20 @@ def score_primary_owner_candidate(
     path_tokens = set(tokenize(path.replace("\\", "/").replace("/", " ")))
     query_distinctive = {token for token in set(query_tokens) if token not in _generic_file_tokens()}
     label_tokens = set(tokenize(label))
-    identifier_hits = sum(1 for token in query_distinctive if token in label_tokens or token in path_tokens or token in label_lower or token in normalized)
+    identifier_hits = sum(
+        1 for token in query_distinctive
+        if not _is_excluded_owner_token(token)
+        and (token in label_tokens or token in path_tokens or token in label_lower or token in normalized)
+    )
     score += identifier_hits * 90.0
     for token in query_distinctive:
+        if _is_excluded_owner_token(token):
+            continue
         if token in normalized:
             score += 160.0
     for identifier in query_identifiers or []:
+        if _is_excluded_owner_token(identifier):
+            continue
         lowered = identifier.lower()
         if lowered in normalized or lowered in label_lower:
             strength = identifier_corroboration_strength(identifier, query_tokens, query_identifiers or [])
@@ -2479,8 +2731,23 @@ def search(query: str, max_results: int | None = None, max_files: int | None = N
     top = scored[:max_results]
     file_candidate_count = max(max_results, int(config.get("file_candidate_documents", 50)))
     file_top = scored if len(scored) <= file_candidate_count * 10 else scored[:file_candidate_count]
+    # 0 (default) preserves today's behavior exactly -- every file a matching document
+    # lists gets the full scoring treatment. Set >0 only if a project's documents (e.g.
+    # a dependency-edge enrichment doc listing 100+ files) are measurably slowing down
+    # aggregate_files() -- see max_files_per_document_in_aggregation docstring below.
+    max_files_per_document = int(config.get("max_files_per_document_in_aggregation", 0))
     top_score = top[0][0] if top else 0.0
-    confidence = 0.0 if not top else min(0.95, top_score / (top_score + 45.0))
+    # The saturating divisor below used to be a hardcoded 45.0 -- calibrated back when
+    # real top_score values were in the low hundreds. Years of independent scoring
+    # tuning since then (owner-file boosts, pack-first multipliers, symbol weights)
+    # pushed real top_score values into the tens of thousands, so top_score/(top_score+45)
+    # saturates to the 0.95 cap on virtually every real match -- confidence stopped
+    # discriminating between a weak and a strong result. Making this a config value
+    # (rather than picking a new hardcoded constant) prevents the same silent staleness
+    # from recurring as scoring keeps evolving -- each project can recalibrate to its
+    # own real score distribution instead of inheriting a number tuned for someone else's.
+    confidence_scale = float(config.get("confidence_score_scale", 45.0))
+    confidence = 0.0 if not top else min(0.95, top_score / (top_score + confidence_scale))
 
     def result_payload(score: float, doc: ContextDocument, reasons: list[str], include_private: bool = False) -> dict[str, Any]:
         payload = {
@@ -2511,7 +2778,16 @@ def search(query: str, max_results: int | None = None, max_files: int | None = N
         result_payload(score, doc, reasons, include_private=True)
         for score, doc, reasons in file_top
     ]
-    ranked_files = aggregate_files(file_results, max_files, query_tokens, named_files=query_named_files(query))
+    ranked_files = aggregate_files(
+        file_results, max_files, query_tokens,
+        named_files=query_named_files(query),
+        max_files_per_document=max_files_per_document,
+    )
+    # Additive post-pass -- see rebalance_cross_pack_file_stacking() docstring.
+    # Only reorders the top window on a clear evidence margin; a no-op returns
+    # ranked_files unchanged, so this can never make results worse than
+    # aggregate_files() alone already produced.
+    ranked_files = rebalance_cross_pack_file_stacking(ranked_files, file_results)
     ranked_file_paths = {str(item.get("path") or "").lower() for item in ranked_files}
     exact_hint_results = [
         result_payload(score, doc, reasons, include_private=True)

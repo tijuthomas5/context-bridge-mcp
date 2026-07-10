@@ -4,6 +4,29 @@ All notable changes to ContextBridge MCP will be documented in this file.
 
 ---
 
+## [1.3.0-beta] - 2026-07-11
+
+### Added
+- Improve the dashboard.
+- Add a safer cache-cleanup script that only clears cached data once it confirms the service is fully stopped, and reports what was cleared, skipped, or failed for each item.
+- Add a configuration guide covering search-quality tuning options and when to adjust them.
+- Add tunable settings for capping oversized result aggregation and adjusting how much surrounding context is pulled in per match.
+
+### Changed
+- Correct word-form matching so different grammatical forms of the same term are treated as equivalent during scoring.
+- Rebalance how results are grouped across different feature areas, so one heavily-weighted area doesn't crowd out relevant results from other areas.
+- Recalibrate internal confidence scoring thresholds to match a rescaled internal scoring range, applied consistently across the scoring engine and related test tooling.
+- Exclude low-value tokens (file extensions, short filler words) from identifier matching, reducing noise in candidate scoring.
+- Update pack-authoring guidance to call out shared/cross-cutting ownership cases and require naming a single clear decisive owner when multiple plausible candidates exist.
+- Improve classification of certain source file types that were previously falling back to a generic type.
+
+### Fixed
+- Fix a path-normalization inconsistency that could prevent a source file from being matched back to its own pack.
+- Fix the cache-cleanup script falsely reporting the service as still running due to leftover, inactive network connection records.
+- Fix the cache-cleanup script's window closing before its output could be read.
+
+---
+
 ## [1.2.1-beta] - 2026-07-09
 
 ### Changed
