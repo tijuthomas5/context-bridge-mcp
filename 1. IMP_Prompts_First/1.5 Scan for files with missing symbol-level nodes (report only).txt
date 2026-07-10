@@ -15,7 +15,7 @@ wasteful. This prompt exists to produce a ranked list of which files are worth f
 first, based on evidence, not guessing.
 
 SCOPE TO SCAN: [fill in exact workspace-relative folder(s) for THIS project, e.g.
-  main_ui/src/modules/hms   or   main_service/Services   or the whole repo if it is
+  frontend/src/modules/<feature-area>   or   backend/Services   or the whole repo if it is
   small enough to do in one pass]
 
 What you must do:

@@ -93,19 +93,20 @@ GENERIC_FILE_TOKENS_BASE = {
 # (score_primary_owner_candidate()), so this fix cannot change how files rank in general
 # search results, only which SYMBOL wins primary-owner among already-eligible candidates.
 #
-# Real diagnosed case: a query naming "IssueMedicineModal.tsx" explicitly causes
-# query_identifier_tokens() to split off a bare "tsx" identifier (everything after the
-# last "."). Every .tsx candidate's path trivially contains "tsx" -- it's just the file
-# extension -- so without this filter, score_primary_owner_candidate() handed out a flat
-# +900 "identifier match" bonus to any .tsx file for matching something that isn't a real
-# identifier at all and is guaranteed to match every frontend file in the codebase. Same
-# problem applies to any language's extension token (.py, .java, .go, .rb, .php, ...) any
-# time a query names a file with its extension -- not tsx-specific.
+# Real diagnosed case: a query naming a file explicitly (e.g. "SomeModal.tsx") causes
+# query_identifier_tokens() to split off a bare extension identifier (everything after the
+# last "."). Every candidate of that extension trivially contains it in its path -- it's
+# just the file extension -- so without this filter, score_primary_owner_candidate() handed
+# out a flat +900 "identifier match" bonus to any file of that extension for matching
+# something that isn't a real identifier at all and is guaranteed to match every file of
+# that type in the codebase. Same problem applies to any language's extension token (.py,
+# .java, .go, .rb, .php, ...) any time a query names a file with its extension -- not
+# extension-specific.
 #
 # Short stopwords are included for the same reason: they can appear as bare substrings
-# inside an unrelated identifier (e.g. "is" inside "IssueMedicineModal", or "or" inside
-# "CalendarStoreSelectorModal" -- confirmed real case: "or" from the query phrase "wrong
-# store OR wrong day" matched as a substring of "...StoreSelectOR...", worth 160 points,
+# inside an unrelated identifier (e.g. a short 2-3 letter word matching as a substring
+# inside a longer camelCase component/file name -- confirmed real case: a stopword from the
+# query text matched as a bare substring inside an unrelated identifier, worth 160 points,
 # which was enough by itself to flip primary-owner to the wrong candidate) and were being
 # counted as genuine distinctive-token matches.
 #
@@ -1501,18 +1502,15 @@ def aggregate_files(
 # out-add a file that is the true single decisive answer but is backed by one
 # strongly relevant pack plus one only-loosely-relevant one.
 #
-# Real diagnosed case (evt_93ba1557fc504bfb, "Discharge Summary shows only
-# self-administered medicines"): ReturnMedicineModal.tsx is listed by two
-# packs that are both genuinely about pharmacy/medicine
-# (inventory-consumption-dispatch + pharmacy-fulfillment-charge-posting), so
-# it accumulates real score from both. DischargeSummary.tsx (the true answer)
-# is ALSO technically listed by two packs, so a naive "count how many packs"
-# fix would treat both files identically and change nothing -- the real tell
-# is that DischargeSummary.tsx's second pack (treatment-order-flow) is only
-# loosely relevant to this specific query, so it contributes far less than
-# ReturnMedicineModal.tsx's second pack does. That's why this dampens by
-# per-pack PEAK document score (how strongly each pack actually backed the
-# file), not by raw pack count.
+# Real diagnosed case: a decoy file was listed by two packs that are both
+# genuinely relevant to the query's general topic, so it accumulates real
+# score from both. The true answer file was ALSO technically listed by two
+# packs, so a naive "count how many packs" fix would treat both files
+# identically and change nothing -- the real tell is that the true answer's
+# second pack was only loosely relevant to this specific query, so it
+# contributed far less than the decoy's second pack did. That's why this
+# dampens by per-pack PEAK document score (how strongly each pack actually
+# backed the file), not by raw pack count.
 #
 # Deliberately a separate, additive pass -- does not modify aggregate_files()
 # or score_document(). Only re-examines a small bounded window of the top
@@ -2209,7 +2207,7 @@ def identifier_corroboration_strength(
     spelling variant of that word. Verified directly: this took the party
     query's fraction from 0/2=0.0 (floored to 0.4) to 1/1=1.0, without
     changing the outcome of two other already-fixed real queries used as
-    regression checks (pharmacy charge-posting, calendar store/timezone).
+    regression checks.
     """
     def _canon(word: str) -> str:
         if len(word) > 4 and word.endswith("ies"):
@@ -2337,11 +2335,11 @@ def select_primary_owner(
 # Bounded window of top candidates re-examined -- never the whole symbol_hits
 # pool, matching Elasticsearch/OpenSearch rescore's window_size concept.
 #
-# Widened from 5 to 10 after a real diagnosed case (QUERY_2, the negation
-# query -- see tests/debug_query2_rerank_window.py): a file whose PATH text
-# happened to overlap several distinctive query words (e.g. "forms",
-# "discharge", "summary" all literally in "components/forms/DischargeSummary.tsx")
-# received an uncapped, per-token path bonus in score_primary_owner_candidate()
+# Widened from 5 to 10 after a real diagnosed case (a negation query -- see
+# tests/debug_query2_rerank_window.py): a file whose PATH text happened to
+# overlap several distinctive query words (e.g. multiple query words all
+# literally appearing in one folder/file's path) received an uncapped,
+# per-token path bonus in score_primary_owner_candidate()
 # that pushed all 5 of ITS generic symbols above the real answer's rank in the
 # raw sorted pool, even though the real answer's own kind weight is higher
 # (service_method 1050 vs ui_function 900). At window=5 the reranker never
@@ -2435,9 +2433,10 @@ def _normalized_rerank_signals(
 
     # path_token_match: tokens that hit only the FILE PATH, not the label.
     # This still gives some credit for file-context relevance (e.g. a service
-    # sitting under "hms/medication/") but at a much lower weight (0.07 vs
-    # 0.15 for label), so a file whose path coincidentally contains query
-    # tokens (the DischargeSummary.tsx path-bonus problem) cannot dominate.
+    # sitting under a matching folder name) but at a much lower weight (0.07
+    # vs 0.15 for label), so a file whose path coincidentally contains query
+    # tokens (the path-bonus problem seen in the widened-rerank-window case
+    # above) cannot dominate.
     path_overlap = sum(
         1 for token in query_distinctive
         if (token in path_tokens or token in normalized_path)

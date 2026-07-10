@@ -10,8 +10,8 @@ CB's data has two kinds, and SAU covers both:
 
 - **Custom packs** at repo-root `graphify-out/<module>/<pack>/` — what CB itself reads.
 - **Native `graphify-out` folders** — Graphify's own per-folder output, which can
-  exist anywhere in your source tree (`main_service/graphify-out`,
-  `main_service/HMS/Controllers/graphify-out`, `main_ui/src/modules/hms/api/graphify-out`,
+  exist anywhere in your source tree (`backend/graphify-out`,
+  `backend/SomeModule/Controllers/graphify-out`, `frontend/src/modules/feature/api/graphify-out`,
   etc.). CB reads these too, as secondary context.
 
 ## What SAU does

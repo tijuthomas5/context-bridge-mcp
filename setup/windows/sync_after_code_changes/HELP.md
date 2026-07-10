@@ -6,7 +6,7 @@ automatically. If you skip a step, that step's work simply doesn't happen.
 ## 1. `graphify update <folder>` (run manually, by you or any AI tool)
 
 - Touches ONE thing: the **native** `graphify-out/graph.json` inside the folder you point
-  it at (e.g. `main_service/HMS/Controllers/graphify-out/graph.json`).
+  it at (e.g. `backend/SomeModule/Controllers/graphify-out/graph.json`).
 - Free, AST-only, offline. Never touches your custom packs.
 - After it runs, that folder's `graph.json` is fresh (timestamp = now).
 

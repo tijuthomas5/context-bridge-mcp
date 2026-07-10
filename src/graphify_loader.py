@@ -742,23 +742,21 @@ def _resolve_ts_type_alias_kind(
     branch previously classified EVERY node in a `.ts` file as "ui_function"
     unconditionally, regardless of whether it was a real function/const or a
     plain `export type X = ...` / `export interface X {...}` / `export enum X`
-    declaration. Confirmed on a real file: main_ui/src/modules/hms/types/
-    admissionPolicy.types.ts line 1 is `export type HmsBaseFamily = "OPD_LIKE"
-    | "INPATIENT_LIKE" | "CUSTOM" | string;` -- a type alias, not a function --
-    yet it was scored with SYMBOL_PRIMARY_OWNER_WEIGHT's "ui_function" weight
-    (900, close to a real ui_component's 1000) instead of "dto_type" (350).
-    Combined with real path-token overlap (the query's own words appearing in
-    "admissionPolicy.types.ts"), that inflated weight was enough for this
-    supporting type file to outscore the actual decisive owner
-    (DischargeSummary.tsx, a real ui_component) for query evt_1dc058690a9b4f6e.
+    declaration. Confirmed on a real file: a type-definitions file whose first
+    line was a plain type alias (a union-of-string-literals type, not a
+    function) -- yet it was scored with SYMBOL_PRIMARY_OWNER_WEIGHT's
+    "ui_function" weight (900, close to a real ui_component's 1000) instead of
+    "dto_type" (350). Combined with real path-token overlap (the query's own
+    words appearing in that type file's own path), that inflated weight was
+    enough for this supporting type file to outscore the actual decisive
+    owner (a real ui_component) for the query being diagnosed.
 
-    Spot-checked this is not an isolated case: main_ui/src/modules/hms/api/
-    hmsApi.ts mixes real functions (`export const clearHmsSessionCache = ...`)
-    with type aliases (`export type HmsPaymentMethodOptionDto = ...`) in the
-    same file -- the old blanket "ui_function" classification silently
-    mislabeled every type alias in every `.ts` file across the codebase, not
-    just this one query's file. This fix corrects all of them the same way
-    _resolve_tsx_declaration_kind() already corrects `.tsx` files.
+    Spot-checked this is not an isolated case: another real API file mixes
+    real functions with type aliases in the same file -- the old blanket
+    "ui_function" classification silently mislabeled every type alias in
+    every `.ts` file across the codebase, not just this one query's file.
+    This fix corrects all of them the same way _resolve_tsx_declaration_kind()
+    already corrects `.tsx` files.
 
     Deliberately narrow scope: only returns a value when the real declaration
     line is found AND is a type/interface/enum keyword ("dto_type"). Returns

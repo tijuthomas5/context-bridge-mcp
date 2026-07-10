@@ -174,7 +174,7 @@ def write_orphan_report(orphans, pack_module_counts):
         "generated_by": "scan_repo.py",
         "instructions": (
             "Review each entry. Set 'decision' to an existing pack key "
-            "(e.g. 'hms/billing-settlement') to add this file to that pack's "
+            "(e.g. 'billing/invoicing') to add this file to that pack's "
             "source-files.txt, to 'NEW:<pack-name>' to flag it for a new pack, "
             "or leave blank / 'skip' to ignore. This file is never read "
             "automatically -- applying decisions is a separate, explicit step."
