@@ -4,6 +4,22 @@ All notable changes to ContextBridge MCP will be documented in this file.
 
 ---
 
+## [1.3.1-beta] - 2026-07-11
+
+### Added
+- Add event-backed drilldown modals for dashboard quality cards, so developers can inspect the exact queries and event IDs behind follow-up cases.
+
+### Changed
+- Rework retrieval confidence to reflect returned evidence quality and query-match strength, instead of relying mainly on raw score magnitude.
+- Reframe the dashboard's top summary cards around event-based retrieval quality, separating CB's own output signals from optional reviewed outcome logs.
+- Clarify AI-skill guidance so retrieval queries are formed from user-known/product-known terms and miss logging only records real ContextBridge misses.
+
+### Fixed
+- Fix the dashboard showing inferred low-confidence failures as if they were real recorded outcomes in Recent Events.
+- Fix benchmark tooling auto-writing success/failure outcomes from heuristic confidence thresholds instead of reviewed misses.
+
+---
+
 ## [1.3.0-beta] - 2026-07-11
 
 ### Added

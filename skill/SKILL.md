@@ -56,6 +56,14 @@ Tool names and descriptions are loaded automatically from the MCP server. Two ex
 
 `record_outcome` also accepts two optional numeric fields: `used_suggested_files` (how many of CB's suggested files you actually used) and `extra_files_read` (how many files you read beyond what CB suggested). If you can state these honestly, pass them — they make the dashboard's quality signal more accurate. This is entirely optional and up to you/the user; if the user decides not to have the AI record this, CB evaluates the result using its own retrieval-quality signals instead.
 
+**Outcome reporting rules — very important:**
+- Only call `record_outcome()` for real CB misses. Do not log `"success"`.
+- Record `"partial"` only when CB missed one or more files or symbols that were actually required to complete the task, and you had to read extra files because of that miss.
+- Record `"failed"` only when CB missed the needed area badly enough that you could not complete the task from CB's retrieval.
+- Do **not** blame CB for AI over-reading. Extra file reads alone do **not** mean `"partial"` or `"failed"`.
+- If the AI ignored good CB results, wandered into unrelated files, or hallucinated the need for extra reading, do not record a CB miss. If you must explain the situation, use `failure_reason: "ai_did_not_use_context"` only together with a real `"partial"` or `"failed"` outcome that was still caused by a CB miss.
+- Only populate `missed_files` with files that were genuinely required and absent from CB's suggested result.
+
 **How to fill these in:** take the `top_files` list from CB's response for this `event_id`. Count how many of those exact paths you actually opened, read, or edited while completing the task — that number is `used_suggested_files`. Count any other files you opened that were NOT in that list — that number is `extra_files_read`. Base both counts only on files you genuinely touched this task, never guess or round up.
 
 ---
@@ -65,13 +73,13 @@ Tool names and descriptions are loaded automatically from the MCP server. Two ex
 1. `>>SEARCH:` fires `search_context_hybrid()` — always first
 2. `find_code_locations()` — if exact file / line / symbol is needed after step 1
 3. `get_module_summary()` — if a module needs deeper context before editing
-4. `record_outcome(event_id, outcome)` — always after task. `outcome`: `"success"` / `"partial"` / `"failed"`
+4. `record_outcome(event_id, outcome)` — only after task when there is a real CB miss. Use `"partial"` / `"failed"` only for real CB misses, not for AI over-reading.
 
 ---
 
 ## Usage Rules
 
-- If you call `search_context_hybrid()`, don't just describe the problem in a sentence. Include the module/feature name, the concrete symptom, and any specific terms you already know (field names, status values, button labels) as keywords in the query. If the first result looks weak, run a second, narrower query with more specific terms instead of one long vague one.
+- If the AI/client calls `search_context_hybrid()`, don't just describe the problem in a sentence. Include the module/feature name, the concrete symptom, and any specific terms you already know (field names, status values, button labels) as keywords in the query. "Specific terms" means terms already known from the user, product, or UI — not code names the AI should go discover first. If the first result looks weak, run a second, narrower query with more specific known terms instead of one long vague one.
 - Use only the files CB suggests — do not read entire source files
 - Do not call CB again unless the first result was clearly about the wrong module
 - Do not call `analyze_context()` manually — it runs automatically inside `search_context_hybrid()`
@@ -80,7 +88,8 @@ Tool names and descriptions are loaded automatically from the MCP server. Two ex
 - If CB misses required files, follow up with `find_code_locations()` or `get_graphify_pack()` for targeted lookup, then record the miss using `record_outcome()`
 - Code blocks in results are the source of truth — do not infer method names from file names
 - Prefer uncertainty over hallucination
-- After completing the task, always call `record_outcome()` with the `event_id`
+- Do not call `record_outcome()` unless CB actually missed required context
+- Do not record `"partial"` or `"failed"` unless CB actually missed required context. Extra reading caused by AI caution or drift does not count against CB.
 
 ---
 

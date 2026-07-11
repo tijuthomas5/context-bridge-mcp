@@ -41,6 +41,27 @@ The engine is **generic**. All project-specific ranking lives in a swappable
 
 ---
 
+## Dashboard
+
+ContextBridge ships with a local dashboard for monitoring retrieval quality, index health, and config — no cloud dependency.
+
+<p align="center">
+  <img src="docs/assets/screenshots/overview.png" alt="ContextBridge dashboard overview" width="800"><br>
+  <em>Overview — retrieval quality, token savings, and search-mode breakdown</em>
+</p>
+
+<p align="center">
+  <img src="docs/assets/screenshots/settings.png" alt="ContextBridge dashboard settings" width="800"><br>
+  <em>Settings — tune pipeline mode, RAG weights, and model config live</em>
+</p>
+
+<p align="center">
+  <img src="docs/assets/screenshots/token-savings.png" alt="Token savings breakdown modal" width="800"><br>
+  <em>Token savings — per-query breakdown of what CB delivered vs. full-file cost</em>
+</p>
+
+---
+
 > **📖 Before you start — read the docs.**
 > The [`docs/`](docs/0.%20README.md) folder contains everything you need for full setup, configuration, pipeline, and profile creation. Start with [`docs/0. README.md`](docs/0.%20README.md) for a guided index of all documentation.
 

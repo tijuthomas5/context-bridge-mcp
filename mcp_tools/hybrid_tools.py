@@ -14,6 +14,7 @@ from mcp_tools.tools import clamp_int, clean_query, graph_hint_guardrails, tool_
 from mcp_tools.usage import timed_call, log_tool_event
 from search import (
     RANKING_PROFILE,
+    compute_result_confidence,
     search,
     select_primary_owner,
     score_primary_owner_candidate,
@@ -327,9 +328,27 @@ def search_context_hybrid(
         _reranker_query_tokens,
         _reranker_identifiers,
     )
+    final_symbol_hits = filtered_symbol_hits or keyword_payload.get("symbol_hits", [])
+    final_location_hints = (
+        extract_location_hints(filtered_symbol_hits)
+        if filtered_symbol_hits
+        else (filtered_location_hints or keyword_payload.get("location_hints", []))
+    )
+    final_dependency_chain = filtered_dependency_chain or keyword_payload.get("dependency_chain", [])
+    final_code_blocks = filtered_code_blocks or keyword_payload.get("code_blocks", [])
+    confidence = compute_result_confidence(
+        float(keyword_payload.get("confidence") or 0.0),
+        primary_owner,
+        final_code_blocks,
+        final_symbol_hits,
+        final_location_hints,
+        final_dependency_chain,
+        query_tokens=_primary_owner_query_tokens,
+        ranked_files=fused_candidates_extended[:output_max_files],
+    )
     return {
         "query": query,
-        "confidence": keyword_payload.get("confidence"),
+        "confidence": confidence,
         "retrieval_mode": retrieval_mode,
         "mode": hybrid.mode,
         "query_profile": hybrid.diagnostics.get("query_profile"),
@@ -343,11 +362,11 @@ def search_context_hybrid(
         "suppressed_vector_candidates": hybrid.suppressed_vector_candidates[:3],
         "facts": keyword_payload.get("facts", []),
         "primary_owner": primary_owner,
-        "symbol_hits": filtered_symbol_hits or keyword_payload.get("symbol_hits", []),
-        "location_hints": extract_location_hints(filtered_symbol_hits) if filtered_symbol_hits else (filtered_location_hints or keyword_payload.get("location_hints", [])),
-        "dependency_chain": filtered_dependency_chain or keyword_payload.get("dependency_chain", []),
+        "symbol_hits": final_symbol_hits,
+        "location_hints": final_location_hints,
+        "dependency_chain": final_dependency_chain,
         "related_files": filtered_related_files or keyword_payload.get("related_files", []),
-        "code_blocks": filtered_code_blocks or keyword_payload.get("code_blocks", []),
+        "code_blocks": final_code_blocks,
         "results": keyword_payload.get("results", [])[:output_max_results],
         "diagnostics": hybrid.diagnostics,
         "vector_candidate_count": len(hybrid.vector_candidates),

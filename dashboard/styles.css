@@ -421,7 +421,15 @@ code {
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--text-2);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
 }
+
+.metric-label-text { overflow: hidden; text-overflow: ellipsis; }
+.metric-label-icon { flex-shrink: 0; opacity: 0.75; font-size: 10px; }
 
 .metric-value {
   font-size: 26px;
@@ -938,6 +946,90 @@ select.form-input option { background: var(--surface); }
 
 @keyframes toastOut {
   to   { opacity: 0; transform: translateY(8px) scale(.97); }
+}
+
+/* ─── Modal ──────────────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.6);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.modal-panel {
+  background: var(--surface);
+  color: var(--text);
+  width: 100%;
+  max-height: 85vh;
+  overflow: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  padding: 22px;
+  box-shadow: var(--shadow-lg);
+}
+
+.modal-panel.modal-md { max-width: 840px; }
+.modal-panel.modal-lg { max-width: 980px; }
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  transition: color var(--transition);
+}
+.modal-close:hover { color: var(--text); }
+
+.modal-hint {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  margin: 6px 0 16px;
+  line-height: 1.5;
+}
+
+.modal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.modal-table th, .modal-table td { padding: 9px 12px; }
+.modal-table thead tr { text-align: left; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+.modal-table tfoot tr { border-top: 2px solid var(--border); font-weight: 700; }
+
+.modal-info-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: help;
+  vertical-align: middle;
 }
 
 /* ─── Index health special cells ─────────────────────────────────────────────── */

@@ -450,33 +450,38 @@ function getOutcomeMetrics(stats) {
 }
 
 function renderCards(stats) {
-  const outcomeMetrics = getOutcomeMetrics(stats);
   const totalRuns = Number(stats.total_tool_calls || 0);
-  const totalOutcomes = Number(outcomeMetrics.count || stats.total_tasks_with_outcomes || 0);
-  const outcomeHint = outcomeMetrics.basis === "recorded"
-    ? "recorded outcomes"
-    : outcomeMetrics.basis === "inferred"
-      ? "inferred from events"
-      : "recorded + inferred";
+  const qualityCounts = stats.quality_grade_counts || {};
+  const strongCount = Number(qualityCounts.strong || 0);
+  const moderateCount = Number(qualityCounts.moderate || 0);
+  const needsReviewCount = Number(qualityCounts.needs_review || 0);
+  const qualityBreakdown = stats.quality_breakdown || {};
+  const moderateRows = Array.isArray(qualityBreakdown.moderate) ? qualityBreakdown.moderate.length : 0;
+  const needsReviewRows = Array.isArray(qualityBreakdown.needs_review) ? qualityBreakdown.needs_review.length : 0;
+  const moderateRate = Number(stats.moderate_rate_percent || 0);
+  const needsReviewRate = Number(stats.needs_review_rate_percent || 0);
   const cards = [
     ["Tool Calls", totalRuns, "all time"],
-    ["Outcomes", totalOutcomes, outcomeHint],
-    ["Success Rate", `${outcomeMetrics.successRate}%`, `of ${outcomeHint}`],
-    ["Partial Rate", `${outcomeMetrics.partialRate}%`, `of ${outcomeHint}`],
-    ["Failed Rate", `${outcomeMetrics.failedRate}%`, `of ${outcomeHint}`],
+    ["Strong Results", `${stats.strong_rate_percent || 0}%`, `${strongCount} event-based strong retrievals`],
+    ["Moderate Results", `${stats.moderate_rate_percent || 0}%`, `${moderateCount} event-based moderate retrievals`],
+    ["Needs Review", `${stats.needs_review_rate_percent || 0}%`, `${needsReviewCount} event-based review candidates`],
     ["Token savings", `${stats.estimated_token_savings_percent}%`, "measured · chars vs full files"],
     ["Ranking Profile", stats.latest_ranking_profile || "—", "latest active profile"],
   ];
   setHtml("summaryCards", cards.map(([l, v, h]) =>
     l === "Token savings"
       ? clickableMetricCard(l, v, h, "showTokenSavingsModal()")
-      : metricCard(l, v, h)
+      : l === "Moderate Results" && (moderateCount > 0 || moderateRows > 0 || moderateRate > 0)
+          ? clickableMetricCard(l, v, h, "showQualityBreakdownModal('moderate')")
+          : l === "Needs Review" && (needsReviewCount > 0 || needsReviewRows > 0 || needsReviewRate > 0)
+            ? clickableMetricCard(l, v, h, "showQualityBreakdownModal('needs_review')")
+            : metricCard(l, v, h)
   ).join(""));
 }
 
 function clickableMetricCard(label, value, hint, onclick) {
   return `<div class="metric-card" style="cursor:pointer" title="Click to see how this is calculated" onclick="${onclick}">
-    <div class="metric-label">${escapeHtml(label)} &#128269;</div>
+    <div class="metric-label"><span class="metric-label-text">${escapeHtml(label)}</span><span class="metric-label-icon">&#128269;</span></div>
     <div class="metric-value">${escapeHtml(String(value))}</div>
     ${hint ? `<div class="metric-hint">${escapeHtml(hint)}</div>` : ""}
   </div>`;
@@ -486,40 +491,40 @@ function showTokenSavingsModal() {
   const b = latestStats && latestStats.token_savings_breakdown;
   if (!b) return;
   const fmt = (n) => Number(n || 0).toLocaleString();
-  const metricInfo = (text) => `<span title="${escapeHtml(text)}" aria-label="${escapeHtml(text)}" style="display:inline-block;margin-left:6px;padding:1px 5px;border-radius:999px;background:rgba(125,211,252,.18);border:1px solid rgba(125,211,252,.45);color:#7dd3fc;font-size:11px;font-weight:700;line-height:1.2;cursor:help;vertical-align:middle">i</span>`;
+  const metricInfo = (text) => `<span class="modal-info-badge" title="${escapeHtml(text)}" aria-label="${escapeHtml(text)}">i</span>`;
   const pageData = paginateRows((b.rows || []).slice().reverse(), tokenSavingsPage, TOKEN_SAVINGS_PAGE_SIZE);
   tokenSavingsPage = pageData.page;
   const rows = pageData.items.map((r) => `
     <tr>
-      <td style="padding:6px;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.query || "")}</td>
-      <td style="padding:6px;text-align:right">${fmt(r.delivered_chars)}</td>
-      <td style="padding:6px;text-align:right">${fmt(r.baseline_chars)}</td>
-      <td style="padding:6px;text-align:right"><strong>${r.saved_percent}%</strong></td>
+      <td style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.query || "")}</td>
+      <td style="text-align:right">${fmt(r.delivered_chars)}</td>
+      <td style="text-align:right">${fmt(r.baseline_chars)}</td>
+      <td style="text-align:right"><strong>${r.saved_percent}%</strong></td>
     </tr>`).join("");
   const html = `
-    <div onclick="closeTokenSavingsModal(event)" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px">
-      <div onclick="event.stopPropagation()" style="background:var(--panel,#171c26);color:var(--text,#e8e8e8);max-width:840px;width:100%;max-height:85vh;overflow:auto;border-radius:12px;border:1px solid var(--border,#2a2f3a);padding:22px;box-shadow:0 12px 48px rgba(0,0,0,.55)">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <h2 style="margin:0;font-size:17px">Token savings &mdash; how it&#39;s calculated</h2>
-          <button onclick="closeTokenSavingsModal()" style="background:none;border:none;color:var(--text-muted,#9aa3b2);font-size:24px;line-height:1;cursor:pointer">&times;</button>
+    <div class="modal-overlay" onclick="closeTokenSavingsModal(event)">
+      <div class="modal-panel modal-md" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <h2 class="modal-title">Token savings &mdash; how it&#39;s calculated</h2>
+          <button class="modal-close" onclick="closeTokenSavingsModal()">&times;</button>
         </div>
-        <p style="color:var(--text-muted,#9aa3b2);font-size:12.5px;margin:6px 0 16px;line-height:1.5">
+        <p class="modal-hint">
           <strong>Savings = 1 &minus; (chars CB delivered to the model) &divide; (chars of the full files CB pointed to)</strong>, summed across queries.<br>
           Baseline = ${escapeHtml(b.baseline || "")}. Characters are used as a token proxy &mdash; the ratio cancels tokenizer bias, so no token library is required.
         </p>
-        <table style="width:100%;border-collapse:collapse;font-size:12.5px">
-          <thead><tr style="text-align:left;color:var(--text-muted,#9aa3b2);border-bottom:1px solid var(--border,#2a2f3a)">
-            <th style="padding:6px">Query</th>
-            <th style="padding:6px;text-align:right">Delivered ${metricInfo("How much text CB actually gave the AI")}</th>
-            <th style="padding:6px;text-align:right">Full files ${metricInfo("How much text the AI would have had to read if it opened the whole files CB pointed to")}</th>
-            <th style="padding:6px;text-align:right">Saved ${metricInfo("How much reading CB saved")}</th>
+        <table class="modal-table">
+          <thead><tr>
+            <th>Query</th>
+            <th style="text-align:right">Delivered ${metricInfo("How much text CB actually gave the AI")}</th>
+            <th style="text-align:right">Full files ${metricInfo("How much text the AI would have had to read if it opened the whole files CB pointed to")}</th>
+            <th style="text-align:right">Saved ${metricInfo("How much reading CB saved")}</th>
           </tr></thead>
           <tbody>${rows}</tbody>
-          <tfoot><tr style="border-top:2px solid var(--border,#2a2f3a);font-weight:bold">
-            <td style="padding:9px 6px">OVERALL (${(b.rows || []).length} queries)</td>
-            <td style="padding:9px 6px;text-align:right">${fmt(b.total_delivered_chars)}</td>
-            <td style="padding:9px 6px;text-align:right">${fmt(b.total_baseline_chars)}</td>
-            <td style="padding:9px 6px;text-align:right;color:var(--success,#4ade80)">${b.overall_saved_percent}%</td>
+          <tfoot><tr>
+            <td>OVERALL (${(b.rows || []).length} queries)</td>
+            <td style="text-align:right">${fmt(b.total_delivered_chars)}</td>
+            <td style="text-align:right">${fmt(b.total_baseline_chars)}</td>
+            <td style="text-align:right;color:var(--success)">${b.overall_saved_percent}%</td>
           </tr></tfoot>
         </table>
         ${renderPager(pageData.page, pageData.pages, pageData.total, "changeTokenSavingsPage(-1)", "changeTokenSavingsPage(1)", "queries")}
@@ -540,6 +545,65 @@ function changeTokenSavingsPage(delta) {
   tokenSavingsPage = Math.max(1, tokenSavingsPage + delta);
   closeTokenSavingsModal();
   showTokenSavingsModal();
+}
+
+function qualityLabel(kind) {
+  return kind === "strong" ? "Strong Results" : kind === "moderate" ? "Moderate Results" : "Needs Review";
+}
+
+function showQualityBreakdownModal(kind) {
+  const breakdown = latestStats && latestStats.quality_breakdown && latestStats.quality_breakdown[kind];
+  if (!Array.isArray(breakdown)) return;
+  const counts = latestStats && latestStats.quality_grade_counts ? latestStats.quality_grade_counts : {};
+  const totalCount = Number(counts[kind] || breakdown.length || 0);
+  const key = `quality_${kind}`;
+  window.__cbQualityPages = window.__cbQualityPages || {};
+  const currentPage = Number(window.__cbQualityPages[key] || 1);
+  const pageData = paginateRows(breakdown.slice().reverse(), currentPage, 20);
+  window.__cbQualityPages[key] = pageData.page;
+  const rows = pageData.items.map((r) => `
+    <tr>
+      <td style="white-space:normal;word-break:break-word;line-height:1.45;max-width:720px">${escapeHtml(r.query || "")}</td>
+      <td style="white-space:nowrap" class="mono-cell">${escapeHtml(r.event_id || "")}</td>
+    </tr>`).join("");
+  const html = `
+    <div class="modal-overlay" onclick="closeQualityBreakdownModal(event)">
+      <div class="modal-panel modal-lg" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <h2 class="modal-title">${escapeHtml(qualityLabel(kind))}</h2>
+          <button class="modal-close" onclick="closeQualityBreakdownModal()">&times;</button>
+        </div>
+        <p class="modal-hint">
+          Event-based CB results behind this card. Use the Event ID to inspect the exact CB result for a case and continue debugging from there.
+          <br>Showing the latest ${breakdown.length} matching events${breakdown.length < totalCount ? ` out of ${totalCount}` : ""}.
+        </p>
+        <table class="modal-table">
+          <thead><tr>
+            <th>Query</th>
+            <th>Event ID</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        ${renderPager(pageData.page, pageData.pages, pageData.total, `changeQualityBreakdownPage('${kind}', -1)`, `changeQualityBreakdownPage('${kind}', 1)`, "events")}
+      </div>
+    </div>`;
+  const root = document.createElement("div");
+  root.id = "qualityBreakdownModalRoot";
+  root.innerHTML = html;
+  document.body.appendChild(root);
+}
+
+function closeQualityBreakdownModal() {
+  const root = byId("qualityBreakdownModalRoot");
+  if (root) root.remove();
+}
+
+function changeQualityBreakdownPage(kind, delta) {
+  window.__cbQualityPages = window.__cbQualityPages || {};
+  const key = `quality_${kind}`;
+  window.__cbQualityPages[key] = Math.max(1, Number(window.__cbQualityPages[key] || 1) + delta);
+  closeQualityBreakdownModal();
+  showQualityBreakdownModal(kind);
 }
 
 function renderModeOverview(stats) {

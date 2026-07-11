@@ -26,6 +26,7 @@ _FILE_CHARS_CACHE: dict[str, tuple[float, int]] = {}
 # bounded as usage history grows, instead of scaling with all-time totals.
 _TOKEN_SAVINGS_SAMPLE_WINDOW = 500
 RECENT_LIST_CAP = 1000
+QUALITY_BREAKDOWN_CAP = 50
 
 
 
@@ -344,6 +345,7 @@ def classify_event_risk(event: dict[str, Any], outcome: dict[str, Any] | None, g
     gap_added = int(event.get("gap_files_added") or 0)
     primary_owner = bool(event.get("primary_owner_present"))
     outcome_name = str((outcome or {}).get("outcome") or "")
+    outcome_inferred = bool((outcome or {}).get("inferred"))
     used_suggested = int((outcome or {}).get("used_suggested_files") or 0)
     extra_files = int((outcome or {}).get("extra_files_read") or 0)
     failure_reason = str((outcome or {}).get("failure_reason") or "")
@@ -352,7 +354,7 @@ def classify_event_risk(event: dict[str, Any], outcome: dict[str, Any] | None, g
     reasons: list[str] = []
     graphify_gap_suspected = False
 
-    if outcome_name == "failed":
+    if outcome_name == "failed" and not outcome_inferred:
         reasons.append("logged_failed")
     if analysis_rc == "FAILED":
         reasons.append("ai_relevance_failed")
@@ -431,7 +433,7 @@ def classify_event_risk(event: dict[str, Any], outcome: dict[str, Any] | None, g
     # against this project's real score range so "likely_retrieval_miss" only fires
     # for genuinely weak matches, and "likely_good" only requires above-median
     # confidence rather than a near-best-case score that most real matches never hit.
-    if outcome_name == "failed" or analysis_rc == "FAILED" or confidence < 0.30 or (not primary_owner and symbol_hits < 5):
+    if (outcome_name == "failed" and not outcome_inferred) or analysis_rc == "FAILED" or confidence < 0.30 or (not primary_owner and symbol_hits < 5):
         risk_state = "likely_retrieval_miss"
         action_label = "improve query/profile"
     elif analysis_parse_error or analysis_parse_incomplete:
@@ -657,6 +659,10 @@ def event_mode(event: dict[str, Any]) -> str:
     return "other"
 
 
+def is_retrieval_event(event: dict[str, Any]) -> bool:
+    return event_mode(event) in {"keyword", "hybrid_hash", "hybrid_semantic"}
+
+
 def build_mode_stats(events: list[dict[str, Any]], outcomes_by_event: dict[str, dict[str, Any]]) -> dict[str, Any]:
     mode_rows: dict[str, list[dict[str, Any]]] = {"keyword": [], "hybrid_hash": [], "hybrid_semantic": [], "other": []}
     for event in events:
@@ -760,7 +766,7 @@ def build_stats() -> dict[str, Any]:
                 outcome = "partial"
             # Recalibrated alongside classify_event_risk() above -- see that comment
             # for why 0.45 is no longer the right cutoff under the rescaled formula.
-            elif files_returned == 0 or (isinstance(confidence, (int, float)) and float(confidence) < 0.25):
+            elif files_returned == 0:
                 outcome = "failed"
             elif analysis_parse_incomplete:
                 outcome = "partial"
@@ -1000,9 +1006,17 @@ def build_stats() -> dict[str, Any]:
     ][:25]
 
     recent_events: list[dict[str, Any]] = []
+    retrieval_event_count = 0
+    quality_breakdown: dict[str, list[dict[str, Any]]] = {
+        "strong": [],
+        "moderate": [],
+        "needs_review": [],
+    }
     risk_state_counts: Counter[str] = Counter()
     action_label_counts: Counter[str] = Counter()
     proof_state_counts: Counter[str] = Counter()
+    quality_grade_counts: Counter[str] = Counter()
+    follow_up_counts: Counter[str] = Counter()
     ai_flagged_count = 0
     # Aggregate counts (risk_state_counts etc.) are computed over ALL events below,
     # unaffected by the cap -- only the per-event `recent_events` rows shipped to
@@ -1012,6 +1026,7 @@ def build_stats() -> dict[str, Any]:
     _recent_events_start = max(0, len(events) - RECENT_LIST_CAP)
     for _event_index, event in enumerate(events):
         outcome = outcomes_by_event.get(event.get("event_id"))
+        recorded_outcome = outcome if outcome and not bool(outcome.get("inferred")) else None
         risk = classify_event_risk(event, outcome, last_gap_search)
         benchmark_meta = benchmark_meta_by_question.get(str(event.get("query") or ""))
         audit_row = audit_by_event.get(str(event.get("event_id") or "")) or audit_by_question.get(str(event.get("query") or ""))
@@ -1023,35 +1038,59 @@ def build_stats() -> dict[str, Any]:
         # AI-flagged: the calling AI itself reported partial/failed with a real reason —
         # tracked independently of risk_state so it never changes CB's own classification/counts,
         # it's purely a second, honest lens for developers to find what an AI actually complained about.
-        outcome_value = (outcome or {}).get("outcome")
-        outcome_failure_reason = str((outcome or {}).get("failure_reason") or "").strip().lower()
+        outcome_value = (recorded_outcome or {}).get("outcome")
+        outcome_failure_reason = str((recorded_outcome or {}).get("failure_reason") or "").strip().lower()
         ai_flagged = outcome_value in ("partial", "failed") and outcome_failure_reason not in ("", "none")
         if ai_flagged:
             ai_flagged_count += 1
-        if _event_index >= _recent_events_start:
+        _quality = None
+        _follow_up = None
+        if is_retrieval_event(event):
+            retrieval_event_count += 1
             _quality = compute_quality_grade(event, risk)
+            _follow_up = compute_follow_up(
+                _quality["quality_grade"],
+                str(risk.get("risk_state") or ""),
+                str(outcome_value or ""),
+                bool(ai_flagged),
+                str(proof.get("proof_state") or ""),
+            )
+            quality_grade_counts[str(_quality["quality_grade"])] += 1
+            follow_up_counts[str(_follow_up["follow_up"])] += 1
+            quality_breakdown.setdefault(str(_quality["quality_grade"]), []).append({
+                "event_id": event.get("event_id"),
+                "timestamp": event.get("timestamp"),
+                "query": event.get("query"),
+                "confidence": event.get("confidence"),
+                "follow_up": _follow_up["follow_up"],
+                "top_files": event.get("top_files", [])[:5],
+                "tool": event.get("tool"),
+            })
+        if _event_index >= _recent_events_start:
+            _quality = _quality or compute_quality_grade(event, risk)
+            _follow_up = _follow_up or compute_follow_up(
+                _quality["quality_grade"],
+                str(risk.get("risk_state") or ""),
+                str(outcome_value or ""),
+                bool(ai_flagged),
+                str(proof.get("proof_state") or ""),
+            )
             recent_events.append({
                 **event,
-                "outcome": (outcome or {}).get("outcome"),
-                "failure_reason": (outcome or {}).get("failure_reason"),
-                "outcome_notes": (outcome or {}).get("notes"),
+                "outcome": (recorded_outcome or {}).get("outcome"),
+                "failure_reason": (recorded_outcome or {}).get("failure_reason"),
+                "outcome_notes": (recorded_outcome or {}).get("notes"),
                 "ai_flagged": ai_flagged,
                 **risk,
                 **_quality,
-                **compute_follow_up(
-                    _quality["quality_grade"],
-                    str(risk.get("risk_state") or ""),
-                    str(outcome_value or ""),
-                    bool(ai_flagged),
-                    str(proof.get("proof_state") or ""),
-                ),
+                **_follow_up,
                 **proof,
             })
 
     stats = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "total_tool_calls": len(events),
-        "total_search_context_calls": tool_counts.get("search_context", 0),
+        "total_search_context_calls": retrieval_event_count,
         "total_tasks_with_outcomes": len(all_outcomes),
         "total_recorded_outcomes": len(outcomes),
         "total_inferred_outcomes": len(inferred_outcomes),
@@ -1074,9 +1113,18 @@ def build_stats() -> dict[str, Any]:
         "ai_flagged_count": ai_flagged_count,
         "action_label_counts": dict(action_label_counts),
         "proof_state_counts": dict(proof_state_counts),
+        "quality_grade_counts": dict(quality_grade_counts),
+        "quality_breakdown": {
+            key: rows[-QUALITY_BREAKDOWN_CAP:]
+            for key, rows in quality_breakdown.items()
+        },
+        "follow_up_counts": dict(follow_up_counts),
         "success_rate_percent": percent(outcome_counts.get("success", 0) / len(all_outcomes)) if all_outcomes else 0.0,
         "partial_rate_percent": percent(outcome_counts.get("partial", 0) / len(all_outcomes)) if all_outcomes else 0.0,
         "failed_rate_percent": percent(outcome_counts.get("failed", 0) / len(all_outcomes)) if all_outcomes else 0.0,
+        "strong_rate_percent": percent(quality_grade_counts.get("strong", 0) / retrieval_event_count) if retrieval_event_count else 0.0,
+        "moderate_rate_percent": percent(quality_grade_counts.get("moderate", 0) / retrieval_event_count) if retrieval_event_count else 0.0,
+        "needs_review_rate_percent": percent(quality_grade_counts.get("needs_review", 0) / retrieval_event_count) if retrieval_event_count else 0.0,
         "average_confidence": average(confidence_values),
         "average_files_returned": average(files_returned_values),
         "average_used_suggested_files": average(used_files),

@@ -219,6 +219,110 @@ SYMBOL_PRIMARY_OWNER_WEIGHT = {
     "entity_type": 320.0,
     "file": 0.0,
 }
+
+
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
+
+
+def _raw_score_confidence(top_score: float, config: dict[str, Any]) -> float:
+    confidence_scale = float(config.get("confidence_score_scale", 45.0))
+    if top_score <= 0:
+        return 0.0
+    return min(0.95, float(top_score) / (float(top_score) + confidence_scale))
+
+
+def _normalized_signal(value: int, target: int) -> float:
+    if target <= 0:
+        return 0.0
+    return _clamp01(float(value) / float(target))
+
+
+def _is_informative_confidence_token(token: str) -> bool:
+    lowered = token.lower()
+    if len(lowered) < 3:
+        return False
+    if lowered in STOP_WORDS:
+        return False
+    if lowered in _PRIMARY_OWNER_EXCLUDED_TOKENS:
+        return False
+    if lowered in _generic_file_tokens():
+        return False
+    return True
+
+
+def _query_match_signal(
+    query_tokens: list[str] | None,
+    primary_owner: dict[str, Any] | None,
+    ranked_files: list[dict[str, Any]] | None,
+) -> float:
+    informative_tokens = sorted({
+        token.lower()
+        for token in (query_tokens or [])
+        if _is_informative_confidence_token(token)
+    })
+    if not informative_tokens:
+        return 0.0
+
+    haystack_parts: list[str] = []
+    if primary_owner:
+        haystack_parts.extend([
+            str(primary_owner.get("label") or ""),
+            str(primary_owner.get("path") or ""),
+            str(primary_owner.get("pack") or ""),
+            str(primary_owner.get("source") or ""),
+        ])
+    for item in (ranked_files or [])[:5]:
+        source = item.get("source")
+        haystack_parts.extend([
+            str(item.get("path") or ""),
+            str(item.get("pack") or ""),
+            str(source if isinstance(source, str) else " ".join(source or [])),
+        ])
+    haystack = " ".join(haystack_parts).lower()
+    matched = sum(1 for token in informative_tokens if token in haystack)
+    target = max(1, min(len(informative_tokens), 4))
+    return _normalized_signal(matched, target)
+
+
+def compute_result_confidence(
+    baseline_confidence: float,
+    primary_owner: dict[str, Any] | None,
+    code_blocks: list[dict[str, Any]] | None,
+    symbol_hits: list[dict[str, Any]] | None,
+    location_hints: list[dict[str, Any]] | None,
+    dependency_chain: list[dict[str, Any]] | None,
+    query_tokens: list[str] | None = None,
+    ranked_files: list[dict[str, Any]] | None = None,
+) -> float:
+    owner_signal = 1.0 if primary_owner else 0.0
+    code_signal = _normalized_signal(len(code_blocks or []), 4)
+    symbol_signal = _normalized_signal(len(symbol_hits or []), 30)
+    location_signal = _normalized_signal(len(location_hints or []), 8)
+    dependency_signal = _normalized_signal(len(dependency_chain or []), 6)
+    query_match_signal = _query_match_signal(query_tokens, primary_owner, ranked_files)
+
+    evidence_confidence = (
+        owner_signal * 0.28
+        + code_signal * 0.24
+        + symbol_signal * 0.20
+        + location_signal * 0.14
+        + dependency_signal * 0.14
+    )
+    final_confidence = (
+        (float(baseline_confidence) * 0.20)
+        + (evidence_confidence * 0.55)
+        + (query_match_signal * 0.25)
+    )
+    if query_match_signal < 0.20:
+        final_confidence = min(final_confidence, 0.35)
+    elif query_match_signal < 0.40:
+        final_confidence = min(final_confidence, 0.55)
+    if not primary_owner or not (code_blocks or []):
+        final_confidence = min(final_confidence, 0.45)
+    return round(min(0.95, _clamp01(final_confidence)), 3)
+
+
 DEPENDENCY_RELATION_WEIGHT = {
     "calls": 600.0,
     "invokes": 600.0,
@@ -2745,8 +2849,7 @@ def search(query: str, max_results: int | None = None, max_files: int | None = N
     # (rather than picking a new hardcoded constant) prevents the same silent staleness
     # from recurring as scoring keeps evolving -- each project can recalibrate to its
     # own real score distribution instead of inheriting a number tuned for someone else's.
-    confidence_scale = float(config.get("confidence_score_scale", 45.0))
-    confidence = 0.0 if not top else min(0.95, top_score / (top_score + confidence_scale))
+    baseline_confidence = _raw_score_confidence(top_score, config)
 
     def result_payload(score: float, doc: ContextDocument, reasons: list[str], include_private: bool = False) -> dict[str, Any]:
         payload = {
@@ -2866,6 +2969,16 @@ def search(query: str, max_results: int | None = None, max_files: int | None = N
         ranked_files=ranked_files,
     )
     primary_owner = select_primary_owner(symbol_hits, ranked_file_order, query_tokens, ranked_file_paths, query_identifiers)
+    confidence = compute_result_confidence(
+        baseline_confidence,
+        primary_owner,
+        code_blocks,
+        symbol_hits,
+        location_hints,
+        dependency_chain,
+        query_tokens=query_tokens,
+        ranked_files=ranked_files,
+    )
     routing_results = results + file_results[:80]
 
     facts: list[dict[str, Any]] = []

@@ -575,29 +575,11 @@ async def run_mcp_test(file_paths: list, server_url: str, session_id: str):
                                     # --- Real World Evaluation ---
                                     # Ignore the hallucinated JSON ground truth.
                                     # Evaluate based on Context Bridge's actual reported confidence.
-                                    confidence = float(res_data.get('confidence', 0.0))
-                                    files_returned = len(res_data.get('files', []))
-                                    
-                                    # Recalibrated to match search.py's confidence_score_scale fix --
-                                    # see build_dashboard_stats.py's classify_event_risk() comment.
-                                    if files_returned == 0 or confidence < 0.25:
-                                        status = "failed"
-                                        missed = []
-                                        reason = "bad_ranking"
-                                    else:
-                                        status = "success"
-                                        missed = []
-                                        reason = "none"
-                                        
                                     if event_id:
-                                        await session.call_tool("record_outcome", arguments={
-                                            "event_id": event_id,
-                                            "outcome": status,
-                                            "missed_files": missed,
-                                            "failure_reason": reason,
-                                            "notes": f"Q-ID: {q_id} - Automated Benchmark"
+                                        await queue.put({
+                                            "type": "info",
+                                            "message": f"{q_id} completed without automatic outcome logging. Record only real partial/failed CB misses after review."
                                         })
-                                        await queue.put({"type": "info", "message": f"Recorded telemetry: {status.upper()} ({reason})"})
                                 except Exception as eval_e:
                                     await queue.put({"type": "error", "message": f"Eval parsing error: {eval_e}"})
                                 # ------------------------------------------------
