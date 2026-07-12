@@ -24,6 +24,7 @@ ContextBridge is designed to help with:
 - surfacing useful symbols and line hints
 - providing first-pass related files
 - reducing manual repo search effort
+- explaining how an existing feature or workflow currently works
 
 ContextBridge is not designed to:
 

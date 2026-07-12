@@ -51,6 +51,30 @@ It does not fix:
 
 If the right files were not retrieved strongly enough, the local AI may still produce a weak result.
 
+### 4a. Local AI quality depends heavily on model size
+
+CB's retrieval (Graphify + keyword/vector ranking) does not depend on the local AI at
+all — a weak or missing local AI cannot make retrieval itself worse. The analysis stage
+is a separate, optional layer on top, and its output quality tracks the model's own
+instruction-following capability, not CB's ranking.
+
+The analysis output schema is intentionally detailed (relevance grading, per-topic
+breakdown, ranked files, symbols, dependencies) so a capable model can return a rich,
+structured result. A small model (observed: a 4B model) can fail to reproduce that
+schema at all — returning valid JSON in its own simplified shape instead of the required
+one, which then reports as `parse_error`/`parse_incomplete` with every field empty, even
+though the underlying retrieval was accurate.
+
+If you see this happening:
+
+- Prefer a 7B+ model for the analysis stage — this matches the existing recommendation
+  for `iterative`/`full` pipeline modes.
+- Or run `pipeline_mode: "simple"` (CB retrieval only, no local AI call) — you lose the
+  local re-ranking/summary layer, but retrieval quality and the returned files/symbols
+  are unaffected.
+- Tune `analysis/prompt.py` (`SYSTEM_PROMPT`/`LITE_SYSTEM_PROMPT`) and
+  `analysis_stage.num_ctx` for your model — see `docs/ADVANCED_TUNING.md`.
+
 ## 5. Semantic and hybrid quality depends on setup
 
 Semantic and hybrid performance depends on:

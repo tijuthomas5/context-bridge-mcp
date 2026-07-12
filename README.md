@@ -6,6 +6,8 @@ Without CB, an AI coding agent either guesses which files are relevant, or you p
 
 With CB, the AI calls a single MCP tool and gets back a **compact, ranked result**: the owner file, related files, key symbols, and a dependency summary — typically a few hundred tokens instead of tens of thousands of lines of raw source.
 
+This isn't limited to bug investigations — the same tool answers general questions about how an existing feature or workflow is implemented.
+
 | Without CB | With CB |
 |---|---|
 | Paste 10–50 raw files into context | CB returns the 3–5 files that actually matter |

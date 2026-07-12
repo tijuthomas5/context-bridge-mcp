@@ -50,6 +50,14 @@ Copy this into your AI's system prompt to enable routing tag support.
 CB receives: `OrdersList customer order recent list`
 AI answers: `why is the order not showing after checkout, trace the full data flow`
 
+**Understanding query — not a bug (fires CB):**
+```
+>>SEARCH: order checkout flow
+>>TASK: explain how order checkout currently works, from entry point to confirmation
+```
+CB is not just for bug investigations — this same tag fires CB for "how does this work" /
+"where is this handled" questions too.
+
 **Search only (no task override):**
 ```
 >>SEARCH: order checkout blocked cart
