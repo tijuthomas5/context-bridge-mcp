@@ -2,4 +2,4 @@
 # Prefer requirements-base.txt for normal installs,
 # requirements-semantic.txt for semantic mode,
 # or requirements-all.txt for a full local setup.
-mcp==1.27.2
+mcp==1.28.1
