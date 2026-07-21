@@ -43,6 +43,16 @@ The engine is **generic**. All project-specific ranking lives in a swappable
 
 ---
 
+## Architecture
+
+How your code flows through ContextBridge to your AI agent:
+
+<p align="center">
+  <img src="docs/assets/architecture.png" alt="ContextBridge architecture and data flow" width="720">
+</p>
+
+---
+
 ## Dashboard
 
 ContextBridge ships with a local dashboard for monitoring retrieval quality, index health, and config — no cloud dependency.
